@@ -1,5 +1,534 @@
 # Changelog
 
+## 0.13.0-iui.18
+
+Non-model production risks (Ace):
+
+- **Tile gaps**: OSM FR HOT first fallback; East-Asia map centers jump to OSM FR; settle checks for gap-text / stub tiles (1.2s + 2.8s).
+- **Stream/final state**: sandbox `localState` capture + host restore across contentWiped remounts (forms / pause chrome).
+- **Non-itinerary covers**: hotel well-known aliases, `hotel-covers` starter, `get_place_images` tool alias, booking recipe → hotel cards, enrich via h3/title.
+- **pageerror**: `safeRegExp` on parent classifiers; author-JS invalid regex flag sanitize; iframe error `preventDefault`.
+- **Docs**: `docs/PILOT.zh-CN.md` + ACCEPTANCE target `.18`.
+- Sync target: `web-iui3081` only.
+
+
+## 0.13.0-iui.17
+
+Production stabilize (Ace):
+
+- **Weather chart blank**: prefer host-injected Chart.js UMD + `iuiCreateChart`; rewrite `import('chart.js')` → `__iuiChartMod`; weather-dense starter no longer uses esm.sh; blank weather canvas soft-recovery line.
+- **Esri tile gaps**: Leaflet tile guard fallback chain (Esri Street → Light Gray → Topo → OSM FR HOT) on tileerror / no-tiles; CSP allowlist `*.tile.openstreetmap.fr`.
+- **Model JS long-tail**: `hardenAuthorJs` / `prepareAuthorJs` (smart quotes, control chars, `</script>`, soft brace close); applied in srcdoc + `runAuthorJs` path.
+- **Stuck chrome**: hide partialHint when ready; 2.5s ready timeout for complete fences.
+- Sync target: `web-iui3081` only.
+
+
+## 0.13.0-iui.16
+
+Weather UX + stage chrome (Ace):
+
+- **Stage chips / 加载中**: only while fence is streaming (`partial`); hide once complete. iframe `onLoad` marks `ready` for complete fences (handshake fallback — no more stuck CSS/HTML/JS · 加载中).
+- **Weather density**: host `.iui-weather*` CSS; `weather-dense` starter (hero + chips + Chart.js + 7-day); referee recipe + OIU skill ban thin 3-KPI strips.
+- Sync target: `web-iui3081` only.
+
+## 0.13.0-iui.15
+
+Production review `.14` remaining P1 clear + multi-destination photo verify:
+
+- **P1-PREVIEW-PHOTO**: `previewHtml` runs `enrichPlaceMediaHtml` before sanitize; photo-fill script always injected into srcdoc.
+- **P1-TOOL-TIMEOUT**: `get_trip_stop_images` / `resolveTripStopImages` default `AbortSignal.timeout(8000)`.
+- **P1-OTHER-MEDIA**: enrich+fill cover `.iui-hotel-card` / `.iui-product-card` / `.iui-place-card` / `.iui-cover-card` / `[data-iui-place]`; skill requires Wikimedia for non-itinerary covers; Shanghai daytrip landmarks (豫园/东方明珠/陆家嘴/南京路).
+- **P1-DEAD-SURFACE**: TemplateDrawer / panel / toolview no longer render catalog `GenuiBlock` (sandbox tip + starters).
+- **P1-STATE**: stream path injects author JS via `runAuthorJs` into frozen preview shell (avoids final srcdoc wipe); reload/force still full rebuild.
+- Sync target: `web-iui3081` only.
+
+## 0.13.0-iui.14
+
+Production hardening — trip photos + failure UX + P2 cleanup:
+
+- **`get_trip_stop_images` tool** (OpenIntelligentUI parity): Wikipedia REST + Commons attribution; well-known fallback table (Shanghai/Paris/Nice/Tokyo/…).
+- **Host-side photo fill**: `enrichItineraryHtml` + runtime `buildTripPhotoFillScript` auto-fills empty `.iui-stop-card .photo` bands; `.iui-photo-credit` attribution CSS.
+- **Failure UX**: parse-fail / sandbox error chrome gains **重新生成** (composer re-ask); tile-load errors report to host banner.
+- **P2**: delete dead `e2e-frame-store` / `render-dil-hd-shots` scripts; allowlist photo tool before fence; skill/prompt document the photo path.
+- Sync target: `web-iui3081` only.
+
+
+## 0.13.0-iui.13
+
+### Fixed (prod review `.12` — itinerary photos + stability notes)
+- **P0 photos**: itinerary stop cards now **require** Wikimedia Commons HTTPS photos in design skill (no more "solid muted blocks or …" escape hatch).
+- **Starter** `itinerary-coast`: each stop card embeds `<img>` via `Special:FilePath/…?width=480` (Golden Gate / Monterey Bay / Bixby).
+- **CSS**: `.iui-stop-card .photo img { object-fit: cover }` so real photos fill the 110px band.
+- **CSP**: explicit `commons.wikimedia.org` in `img-src` (alongside upload/thumb; `https:` already allowed).
+- Note: OpenIntelligentUI fetches photos via `get_trip_stop_images` tool — IUI has no such tool yet; models must emit known Commons URLs. Sanitize never stripped `<img>` (root cause was prompt+starter habit).
+
+## 0.13.0-iui.12
+
+### Fixed (remaining P1 from prod review `.11`)
+- **P1-N3** `postMessage` now requires `event.source === iframe.contentWindow` (rejects `null`).
+- **P1-N1** `fenceIndexOf` counts explicit `iui-html` + sandbox-shaped bodies (stable multi-fence keys).
+- **P1-N2** DOM `renderResolvedFenceNode` aligned with registry: catalog/panel GenuiBlock blocked → legacy tip.
+- **P1-N4** README EN/ZH sandbox-first blurb (no Gateway / FreeLLMAPI `:3001` / `.44` default path).
+- **P1-N5** format-referee typo: `language iui-html` (was `language iui`).
+- **P1-N6** streaming: freeze preview `srcDoc` once css completes; patch html via `previewHtml` postMessage; final rebuild only on `jsComplete`.
+
+
+## 0.13.0-iui.11
+
+### Fixed (production review P0 + critical P1)
+- **P0-1** DOM sweep update path now calls `renderHtmlFence` for `iui-html` (stops stream/re-render unmount → code-block flash).
+- **P0-2** `fence-feedback` extracts `iui-html` fences (aligned with format-referee).
+- **P0-3** Deleted orphan DIL/Gateway tests + sidecar (`dil-ir` / `dil-schema` / `gateway-client` / `iui-gateway`).
+- **P1-1** Referee recipes scrubbed to sandbox-only JSON (no catalog `type:` / `iui-html-html`).
+- **P1-2** Action / panel prompts require ```iui-html; markdown-rescue mounts sandbox.
+- **P1-4** `postMessage` rejected while `iframeRef` is null.
+- **P1-5** Preview defers author JS until `jsComplete` (`deferAuthorJs`).
+- **P1-3/6** HTML size cap + truncation banner; strip inline `<script>`; harden sync (hash + minimal surface).
+
+
+## 0.13.0-iui.10
+
+### Fixed
+- DOM mount: when the host strips `iui-html` to a localized「代码块」banner (and ChatSnapshot lang is unavailable), sandbox `{css,html,js}` bodies are rescued and mounted as iframe instead of staying raw JSON.
+- `looksLikeHtmlSandboxBody` + generic-banner / ```json masquerade paths updated for sandbox-first.
+
+
+## 0.13.0-iui.9
+
+- **Map tiles fix:** `tile.openstreetmap.org` returns HTTP 200 + `x-blocked` stubs (markers OK, basemap flat gray). CartoCDN now serves API-KEY watermark tiles. Default → Esri `World_Street_Map` (`{z}/{y}/{x}`) + `.iui-map-wrap` CSS grayscale. Runtime `L.tileLayer` guard rewrites OSM/Carto URLs and auto-fills missing tile layers; build-time `rewriteBlockedMapTileUrls`; CSP allows `server.arcgisonline.com`.
+
+## 0.13.0-iui.8
+
+- **Pricing/kanban in chat bubbles:** `.iui-compare-3` collapse breakpoint 720→480px (bubble ~680px was forcing 1-col). New `.iui-kanban-3` / `.iui-kanban-col` / `.iui-kanban-card` 3-col board helpers.
+- **Leaflet stability:** drop ESM leaflet from importmap; always prefer UMD `leaflet.js` (global `L`) auto-inject when map / trip / OSM patterns appear — empty-map regressions from `import("leaflet")` in srcdoc.
+
+
+## 0.13.0-iui.7
+
+### Port OpenIntelligentUI beauty stack (no Next/CopilotKit runtime)
+- Inject OIU design-system CSS (`--color-*`, SVG `.c-*`, form styles, itinerary/compare helpers)
+- CDN importmap: three / gsap / d3 / chart.js / leaflet
+- `window.createTripAnimator` for map pin-drop + carousel itineraries
+- System prompt + SKILL teach California-coast itinerary + 3-col pricing patterns
+- Starters: `itinerary-coast`, `pricing-3col`
+- Attribution in NOTICE (MIT, CopilotKit/OpenIntelligentUI)
+
+
+## 0.13.0-iui.6 — beauty-bar parse + first-paint fixes
+
+- **Loose JSON repair**: escape raw newlines/tabs inside fence JSON strings before parse — stops false `partial` (stuck「流式生成中」) and missing author JS (empty Leaflet maps).
+- **JS runner**: when author JS runs after `load`, replay `DOMContentLoaded` listeners (calculators with `display:none` results + DOMContentLoaded init now show KPIs on first paint).
+- **deferJs**: only skip JS when partial AND no script body (extracted js always runs).
+- **Sanitize**: fix model typo `\p>` → `<p>`.
+- **Prompt DESIGN BAR**: results on first paint, `iui-sandbox-compare` for 3-tier pricing, escaped `\n` JSON, no gradient tip cards, visible progress rings.
+
+## 0.13.0-iui.5
+
+## 0.13.0-iui.3 — sandbox-first product (P0→P3)
+
+**Breaking:** Catalog packs / DIL / Gateway / IR / instance-store / ui-frame / whitelist-as-gate / weak-model hard guarantees / three-lib ChatGPT alignment **hard-deleted**. Rollback tag: `0.12.0-iui.46`.
+
+- **P0 `0.13.0-iui.0`:** Default product path = ```iui-html free HTML/CSS/JS sandbox. Legacy ```iui JSON → sandbox if parseable, else degrade tip (no GenuiBlock pack trees).
+- **P1 `0.13.0-iui.1`:** Streaming contract fields `placeholder` → `css` → `html` → `js` (+ `jsFunctions` / `jsExpressions`); stage chrome; CDN importmap (chart.js / d3 / three / leaflet).
+- **P2 `0.13.0-iui.2`:** Bridge `sendPrompt` / `openLink` (+ `data-iui-send-prompt` / `data-iui-open-link`); HTTPS/mailto allowlist.
+- **P3 `0.13.0-iui.3`:** Starters (sort-viz / bento-dash / particle / leaflet / echarts / ds-kit / …) + HD sandbox shots.
+
+## prior
+
+## 0.12.0-iui.46
+
+### Productization closeout — common-intent look & feel + local interactions
+
+- **Table-as-cards**: `GenuiTable.layout` = `table` | `cards` | `auto` (≤560px → cards). Pack + density CSS; dil `table-cards` / process-table default `auto`.
+- **Tabs a11y**: pack `PackTabs` ArrowLeft/Right/Home/End + roving tabindex (parity with GenuiBlock TabsNode).
+- **Steps**: empty uses `kind="steps"`; expand chevron; local check/expand unchanged (no model round-trip).
+- **Forms**: submit shows local empty-field hint + 「已本地记录」; no forced model hop.
+- **Map**: geocode pending / error chrome on MapNode (`正在定位…` / 外链兜底).
+- **Ring / density**: progress ring size polish; token catalog gap/pad breathing room toward ChatGPT Intelligent UI.
+- **Client mount fix**: `dil-ir` hash no longer imports `node:crypto` (pure FNV) — fixes web boot `require("node:crypto")` miss that blocked fence mount.
+- No MCP. No logits. No `:3101`/vLLM. Weak-model first-token jitter still deprioritized.
+
+## 0.12.0-iui.45
+
+### MUI / Ant / Chakra + iui-html toward full design systems (token-driven)
+
+- **Shared library themes**: `library-theme.ts` builds MUI `createTheme` / Ant Design tokens / Chakra `extendTheme` from `PACK_BRANDS` + `IUI_TOKEN_CATALOG` only — no per-asset palette hardcoding.
+- **Accent → surfaces**: `color-utils` derives secondary / tint / hero wash / fg / border / on-accent; `packBrandCssVars` emits them for ThemeRoot + ```iui-html.
+- **Pack CSS**: `mui|antd|chakra/pack.module.css` no longer hard-codes brand hex (ThemeRoot seeds vars).
+- **Hero backgrounds**: official packs use `brandHeroBackground(packId)` (gradient from derived tints).
+- **iui-html deepen**: base CSS fully surface-token driven; DS kit classes (badge/alert/field/list/hero/divider); `ds-kit` starter; dark via `prefers-color-scheme`.
+- No MCP. No logits. Productization live polish is next (not in this drop).
+
+## 0.12.0-iui.44
+
+- **Format router**: rules default; optional TypeSafe **Jev** hook (off without key); criteria from intent catalog.
+- **Structured Outputs**: build/advertise `response_format` json_schema; probe optional; unsupported → soft fence + Gateway degrade.
+- Eat dsh hooks end-to-end: `systemPrompt` / `agent/pre-step` / `agent/turn-stopping` / `llm/stream` (cached route).
+- Default path unchanged: **dsh → FreeLLMAPI → plugin Gateway** (no `:3101` / no vLLM).
+- Settings + `docs/PLAN.zh-CN.md` / `docs/FORMAT-ROUTER.md`.
+
+## Docs: drop :3101 / vLLM from default path
+
+- **Default path** is dsh → FreeLLMAPI `:3001` → plugin soft fence + in-process Gateway only.
+- `/workspace/iui-inference-gateway` marked **archived optional**; stopped as a default dependency.
+- Docs: `SETTINGS.md`, `HARD-WALLS.md`, `ARCHITECTURE.md`, README(s). No dsh `baseURL` change needed (already `:3001`).
+
+## 0.12.0-iui.43
+
+### MUI/Ant/Chakra density parity + deepen iui-html (Ace: DO NOT STOP from .42)
+
+- **Shared density parity**: `themeFromPackBrand` for shadcn/mui/antd/chakra; gap/font/control/ring/map always from `IUI_TOKEN_CATALOG`. Brand only supplies accent / fontFamily / radius. `assertOfficialDensityParity()` + pack Ring/Card hardcodes removed.
+- **Expanded `packBrandDensityHints`**: pad/gapLg/ring/map/motion; ThemeProviders (MUI/Antd/Chakra) consume catalog numbers.
+- **iui-html deepen**: `buildSandboxBaseCss` / `mergeSandboxDesignTokens`; form bridge (`data-iui-form` + `submitForm`); bindings/appData getters; starters `compare-cards` / `tabs-panel` / `echarts-mini` / `form-bridge`; host fence merges active pack tokens.
+- No logits. No MCP. No dsh fork. Smoke: brand-map + html-sandbox deepen.
+- **Pack size**: unpack gate raised 12→12.5 MB (product growth from sandbox base CSS + density; tarball still <4 MB).
+- **Docs**: ACCEPTANCE / PUBLISH / HARD-WALLS retargeted to **0.12.0-iui.43**; pack:dry + sync restart in this drop.
+- **Map polish**: geocode-wait map view uses world center (no Shanghai hardcode).
+
+### Honest leftovers
+- Constrained decoding / ChatGPT DIL bytecode / multi-replica store / binary UI frames still hard walls (`docs/HARD-WALLS.md`).
+- Official lib packs are still not full design-system clones — density parity ≠ pixel-perfect MUI/Ant/Chakra docs site.
+- Sandbox is hardened product MVP (CDN allowlist + CSP + bridge), not a full IDE.
+- `npm publish` needs Ace token.
+
+## 0.12.0-iui.42
+
+### Harden compile IR · instance store · frame channel + live E2E + safe force-fence (Ace: DO NOT STOP)
+
+- **IR 1.1**: stable `instanceId` (no Math.random), `validateDilIr`, `materializeSpecFromIr` for mount-from-IR, `createdAt`.
+- **Instance store persist (opt-in)**: JSONL WAL + `.snap.json`; Settings `instanceStorePersist` / path; `GET|POST …/store/persist`; restore on enable.
+- **Replay**: `framesFromReplayDiff` + client `replayInstanceFromHost`; `rebuildInstanceFromLog` / export-import snapshot.
+- **Wire mount → IR/frames**: `resolveFence` exposes `ir`/`instanceId`/`frames`; GenuiBlock `wireMountToFrames` (scoped SSE + replay); **Settings `frameChannelMount`** (default on) gates the client wire; runtime-config mirrors it.
+- **Live E2E**: `scripts/e2e-frame-store.mts` — health → compile(IR/frames) → store open/patch/replay → frames.sse (no model quota).
+- **FreeLLMAPI default opt-in fence (safe)**: `IUI_FENCE_MODE` default **prefer**; visual last-user upgrades to **force** prefill when `IUI_FENCE_FORCE_ON_VISUAL` on; header `x-iui-fence` wins; assistant prefill sets `partial: true`.
+- **Docs**: `docs/SETTINGS.md` (Settings + FreeLLMAPI fence matrix). Gateway `sessionId`/`stableSeed` → store open. No MCP. No dsh fork.
+
+### Honest leftovers
+- Persist is single-node best-effort, not multi-replica WAL.
+- Frame channel remains JSON SSE, not binary UI frames.
+- Prefill / system inject ≠ logits constrained decoding.
+- True multi-region store / ChatGPT DIL bytecode still impossible in-plugin.
+- `npm publish` needs Ace token.
+
+## 0.12.0-iui.41
+
+### HARD-WALLS push (no dsh core fork, no MCP)
+
+- **Compile-service IR**: `dil-ir.ts` emits versioned DIL IR (`ops` + catalogHash + instanceId). Gateway results now include `ir` + `frames`. Sidecar role=`compile-service` with `/compile/ir`, `/catalog/negotiate`, `/store/*`, `/frames.sse`.
+- **Instance store prototype**: `instance-store.ts` — per-instance handles, seq, patch log, replay; session `$bind` fan-out into open instances. Plugin HTTP: `store/open`, `store/patch`, `store/<id>`, `store/<id>/replay`.
+- **UI frame channel**: `ui-frame.ts` + client `frame-channel.ts` (SSE JSON frames: open/ops/bind/patch/close). Not binary ChatGPT UI frame protocol — honest SSE prototype.
+- **FreeLLMAPI prefix enforcement (opt-in)**: `x-iui-fence: prefer|force` injects fence system contract; `force` prefills assistant with ```iui opener. **Not** logits constrained decoding.
+- Smoke: dil-ir / instance-store / ui-frame.
+
+### Still impossible without ChatGPT-scale platform
+- True constrained decoding / grammar logits mask on arbitrary free upstreams.
+- Durable multi-region instance store + binary UI frame channel.
+- Full server DIL bytecode + ~70-native catalog negotiation like ChatGPT.
+
+## 0.12.0-iui.40
+
+
+### Weak-model fence ops · Gateway sidecar UX · map/bind polish (Ace continue)
+
+- **Fence ops telemetry**: `fence-ops.ts` records prime / first-token / json-masquerade / mid-nudge / steers; exposed on `GET …/gateway/health` + `GET …/fence-ops.json`.
+- **Weak-model policy**: `jsonMasqueradeLanguages` + `looksLikeJsonMasqueradeOpen`; mid-nudge tags json-masquerade separately (still no constrained decoding).
+- **Gateway sidecar UX**: Settings → Gateway mode / sidecar URL / health check chip + fence-ops summary (config-driven; fail-open).
+- **Map/bind polish**: `path`/`route` polyline; marker aliases `latitude`/`lon`; geo envelope aliases in appData; MapNode shows geocode coords via postMessage; `$bind` whole-fields include markers/height/path.
+- No MCP. No dsh core fork. No hardcoding of places/intents at call sites.
+
+### Honest leftovers
+- Constrained decoding / server DIL bytecode / instance store / UI frame channel unchanged (`docs/HARD-WALLS.md`).
+- Sidecar + fence-ops are observability/isolation — not ChatGPT-scale compiler.
+- `npm publish` still needs Ace token.
+
+## 0.12.0-iui.39
+
+### Plugin-feasible deepen (Ace continue — no MCP, no dsh core fork)
+
+- **Optional Gateway sidecar**: `scripts/iui-gateway-sidecar.mts` + `gateway-client.ts`; Settings/config `gatewayMode` (`in-process`|`sidecar`|`off`) + `gatewaySidecarUrl`. Plugin HTTP: `GET gateway/health`, `POST gateway/compile` (sidecar with fail-open), `POST gateway/compile/batch`. Fence mount stays sync in-process.
+- **Weak-model fence stability**: `type:"destination"` / other macro-only types promote to `dil:` (fixes former `destination→hero` mis-alias); map failure prose in forbidden first prefixes; `maxSameTurnSteers` 4.
+- **Real-map polish**: default provider **leaflet**; `markers[]` + `height`; denser map chrome / ResizeObserver / fitBounds; density token `--iui-pack-map-h`.
+- **Design density**: map card uses shared pad/radius/elev tokens (not hard-coded px islands).
+
+### Honest leftovers
+- Still no constrained decoding / server DIL bytecode / instance-level store / UI frame channel (see `docs/HARD-WALLS.md`).
+- Sidecar is optional isolation — not ChatGPT-scale compiler.
+- `npm publish` still requires Ace token.
+
+## 0.12.0-iui.38
+
+### Real map (OpenUI plugin path — Ace continue)
+
+- **Native `type:"map"`**: OSM export embed from lat/lng, or Leaflet + OSM tiles srcdoc; Nominatim geocode when only `query`/`address`/`title` (no hardcoded city coordinate table).
+- **Shared `map-embed.ts`**: `buildOsmEmbedUrl` / `buildLeafletMapSrcdoc` / `buildDefaultMapLinks` / `resolveMapSurface` — config-driven CTA templates (高德/百度/OSM).
+- **`map-card` / `destination` macro**: auto-fills links from query; passes zoom/provider/query.
+- **```iui-html fallback**: `leaflet-map` starter; sandbox CSP `connect-src` allows Nominatim + OSM tiles.
+- **Referee / prompts**: map recipe prefers native map node; `map.links` count as external hrefs.
+- **HD shots**: `pnpm run shots:map-hd` → rings / weather chart / compare / bento / OSM / Leaflet (forms deprioritized).
+
+### Honest
+- No MCP. No dsh core fork. Geocode quality depends on Nominatim availability.
+
+## 0.12.0-iui.37
+
+### OpenUI path — Step 1 + Step 2 (Ace-approved)
+
+- **Step 1 — stable DIL schema**: `dil-schema.ts` exports versioned `buildDilSchemaDocument()` (components from `COMPONENT_SCHEMAS`, aliases, macros + declared inputs, tokens, mount contract). Served as `dil-schema.json` + `runtime-config.dilSchema`. Prompt fragment driven by catalog macros (no hardcoded macro whitelist in section-text).
+- **Step 2 — in-plugin Gateway**: `iui-gateway.ts` pipeline parse → DIL-lite → guard validate/repair. Modes `lenient` (mount) / `strict` (reject unrepairable). `fence-resolve` unified on Gateway. Optional HTTP `POST …/gateway/compile`.
+- **Step 3 unchanged**: mount remains plugin fence + `$bind`; `iui-html` sandbox escape only. No dsh core fork, no MCP, no empty bumps.
+
+### Docs
+- `docs/DIL-SCHEMA.md`; HARD-WALLS / ACCEPTANCE / PUBLISH retargeted to `.37`.
+
+### Honest leftovers
+- Still no constrained decoding / server DIL bytecode / instance-level authoritative store.
+- Gateway is same-process (optional HTTP on plugin asset route), not a separate ChatGPT-scale compiler service.
+
+## 0.12.0-iui.36
+
+### Plugin-feasible gap close (no MCP, no hardcoding)
+
+- **Weak-model first-turn**: config-driven `weak-model-policy` (forbidden prefixes, tool-before-fence names, mid-nudge steps); host sentinel uses policy.
+- **Shared density/motion token map**: `IUI_TOKEN_CATALOG` → CSS vars; MUI/Ant/Chakra packs compose `density.module.css` + brand overlay; ThemeProviders read `brand-map`.
+- **$bind / appData deepen**: dotted path lookup, `instanceId`+`bindFrom`, form/accordion/steps/questions projection.
+- **DIL-lite macros**: dashboard, timeline, faq/accordion, quiz, kv-card, process-table, alert-banner, split-view, progress-board.
+- **Sandbox depth**: unpkg/skypack CDN, `appData` postMessage, todo/spark/links starters, push bindings on ready.
+- **Publish readiness**: pack:dry / docs; **no npm publish**. Remaining walls documented in `docs/HARD-WALLS.md`.
+
+## 0.12.0-iui.34
+
+## 0.12.0-iui.35
+
+### Added
+- **Progressive mount by node**: finished root items (and finished children inside an open layout wrapper) mount with stable `iui-node-N` keys as the fence streams; trailing pulse `继续生成…` instead of whole-block-only wait. Streaming uses a stable `stateKey` so earlier nodes are not remounted every chunk.
+- **Typed appData runtime**: tool results keep structured JSON (`AppDataMap`); client projects payloads onto component fields via `COMPONENT_SCHEMAS` (`injectAppDataIntoSpec` / `projectAppDataOntoNode`). `bindings.json` / SSE now carry `{ bindings, appData }`.
+- **`docs/HARD-WALLS.md`**: honest walls that still need ChatGPT-scale server DIL compiler / constrained decoding / instance-level appData store / UI frame channel.
+
+### Changed
+- `parsePartial` records nested progressive candidates (`]}]}` close) for open row/col/grid/card wrappers.
+- GenuiBlock renders through `ProgressiveNodeList`; fence context exposes `streaming`.
+
+### Not in this drop
+- No npm publish.
+- No MCP path.
+
+
+### Added
+- **Deeper `$bind` / appData fill**: unwrap `appData`/`data`/`bindings`/`values` envelopes; dotted paths; JSON blob values for chart/list; `$appData:` alias; `appData`/`dataRef` DIL shorthand; tool `call.<id>.*` scoped keys.
+- **Native catalog**: first-class `entity`, `chips`, `map` (+ DIL macros `entity-chips`, `tabs-card`; `map-card` emits native `map`).
+- **Host first-token sentinel**: `llm/stream` watches must_fence text-delta; flags non-```iui openers; turn-stopping steers `first_token_violation` (honest: no constrained decoding in dsh APIs).
+
+### Changed
+- Binding SSE/client resolve structured `$bind:id` tokens into parsed JSON when the stored value is an array/object blob.
+
+### Honest gap
+- Still **not** ChatGPT-scale server DIL compiler / constrained decoding / typed appData runtime — plugin-local DIL-lite + stream sentinel only.
+
+## 0.12.0-iui.33
+
+### Added
+- **Weak-model first-token contract**: `buildFirstTokenContract` + `FIRST_CHARS_MUST_BE=```iui` injected with fence-first prime; `buildToolBeforeFenceAbort` when tools fire before any fence.
+- **MUI / Ant / Chakra ChatGPT density**: ring gauges via shared `RingGauge`, segmented radios (ToggleButton / Segmented / ButtonGroup), denser theme tokens (12px radius, elevation, stagger root CSS).
+- **```iui-html productization**: starter catalog (计数器 / 指标网格 / 迷你表单), host→frame `theme` + `bindings` commands, fullscreen chrome, denser sandbox base CSS, empty-state starter chips.
+
+### Changed
+- Official pack helpers now pass `RingGauge`; pack.module.css for mui/antd/chakra aligned to shadcn-like density while keeping brand colors.
+- Format referee prompt: weak models prefer fence-first then short outro.
+
+### Honest leftovers vs ChatGPT server DIL
+- Still no server-side DIL compiler / ~70 native component catalog / tool-result ID binding equal to ChatGPT.
+- Official packs are denser but not pixel-identical to ChatGPT chrome.
+- npm publish still pack:dry only (no publish this drop).
+
+## 0.12.0-iui.32
+
+### Added
+- **DIL-lite deepened macros**: `weather-card`, `compare-cards`, `booking-form`, `ticket-list`, `steps-card`/`howto`/`manual`, `schedule-card`, `resource-bento`, `slider-gauge`/`local-gauge`, `menu-card`, `empty-state`/`error-state` (+ prior metric-row / destination / intake). Catalog via `dilLiteCatalog().macros` (≥20).
+- **More aliases / dotted forms**: `hstack`/`vstack`/`panel`/`pill`/`rangechart`, `button.primary`, `callout.warn`, `text.caption`; field shorthand `{kind,id,label}`; `bind` → `$bind:id|fallback`.
+- **Live session E2E**: `scripts/e2e-session.mts` (`pnpm run e2e:session -- --url …`) — type → model → fence → click → model against running dsh (FreeLLMAPI).
+- **Chinese HD dil shots**: `scripts/render-dil-hd-shots.mts` → `/workspace/uploads/iui-dil-hd-shots/` (2×, neutral copy).
+
+### Changed
+- `docs/PUBLISH.md` / `ACCEPTANCE.md` / `ARCHITECTURE.md` target **0.12.0-iui.32**; publish still pack:dry only (no npm publish without token + Ace go-ahead).
+
+## 0.12.0-iui.31
+
+### Added
+- **Weak-model ```json → IUI rescue**: GenUI-shaped ```json/json5 fences mount as ```iui on the client (no prime required). Format referee treats wrong lang as `wrong_fence_lang` and steers rewrite to ```iui.
+- **Bindings near-realtime**: Host `bindings.sse` (EventSource) + tight 400ms poll while `$bind` unresolved; idle 2.5s.
+- **DIL-lite in-plugin compiler**: aliases (`kpi`→`stat`, `toggle`→`switch`, …), dotted forms (`stat.ring` / `chart.line` / `radio.segmented`), macros (`metric-row`, `destination`, `intake`); runs before guard. Catalog on `runtime-config.json`.
+
+### Changed
+- System prompt / SKILL / fence-first prime: fence language MUST be ```iui (never ```json).
+- Token catalog: control + chart density tokens.
+
+## 0.12.0-iui.30
+
+### Added
+- Streaming skeleton Chinese status line (`正在生成交互界面…`) while partial fence has no finished node yet.
+- `scripts/sync-to-dsh-profile.sh` — copy built package into web profile `node_modules` (file: dep is not live).
+
+### Changed
+- Smoke suite includes `binding-parse.spec.ts`.
+
+## 0.12.0-iui.29
+
+### Added
+- **First-turn hard reliability**: mid-turn fence nudge always fires by step≥1 for must_fence; apology /「搜索不可用」counts as format failure; client Markdown rescue also remounts recipe for apology prose.
+- **Local interaction (zero round-trip)**: `"local":true` or omit `action` on switch/slider; `"valueFrom":"<field-id>"` on progress/stat binds to sibling slider/input live.
+- **Tool-result data binding**: `$bind:id` / `$bind:id|fallback` placeholders filled from tool stdout/JSON via Host `bindings.json` bridge (session-scoped).
+- **Progressive streaming reveal**: only newly appended root items animate as partial fence grows.
+- **Design-token catalog** (`IUI_TOKEN_CATALOG` / `IUI_COMPONENT_CATALOG`) + shadcn elevation/motion CSS vars.
+
+### Changed
+- System prompt + SKILL document local + `$bind` contracts.
+
+## 0.12.0-iui.28
+
+### Fixed
+- **Scrub sample-copy demos**: recipes / docs / preview shots no longer reuse ChatGPT sample hostnames or weather brands (`Hiyouga-Air.local`, `Open-Meteo`) or pasted intake prose.
+  - Resource recipe title → `本机` with neutral placeholder metrics.
+  - Weather caption → `来源: 示例天气数据源`; criteria say 折线+区间图 (not a brand).
+  - Form recipe → generic `需求收集` (not 博士论文 sample).
+  - Regenerated HD nontable preview shots with neutral Chinese copy.
+
+## 0.12.0-iui.27
+
+### Changed
+- **Non-table ChatGPT layouts by default**: compare / map / weather / booking / visual recipes no longer push `table`/`keyvalue` as the primary chrome.
+  1. **Compare** → side-by-side `grid`+`card`+`stat.ring` option cards (table only for large filterable datasets).
+  2. **Weather** → hero + stat chips + `chart kind=line|range` (no keyvalue grid).
+  3. **Map** → hero + `list` facts + open links (no keyvalue rows).
+  4. **Booking** → segmented form; results as list/card tickets.
+- System prompt / SKILL / template center copy aligned: “number compare → cards”, not table.
+- Default demos: compare template is card bento; HD Chinese preview set regenerated without table-first shots.
+
+## 0.12.0-iui.26
+
+- **系统级对齐 ChatGPT Intelligent UI（全类型，不只三模板）**：
+  1. **密度 token 下沉到所有卡**：list / callout / keyvalue / steps / tabs / table / hero / card / chart / button / radio / empty-error / link / accordion / timeline / iui-html 沙箱外壳 — 统一 16px 圆角、轻阴影、紧凑 gap、8px 控件圆角。
+  2. **交互**：tabs 改分段胶囊；list/keyvalue/steps 白卡外壳；选中 radio/checkbox 浅底；sandbox 工具条加粗。
+  3. **配方全覆盖**：dashboard / tool / manual / steps / map / booking / compare / visual 全部写入 ChatGPT 散文环绕 + 密度 successCriteria（resource/weather/form 此前已有）。
+- 中文多类预览：`/workspace/uploads/iui-systemwide-shots/`（对比·步骤·订票·地图·表格·看板·可视·沙箱）。
+
+## 0.12.0-iui.25
+
+### Changed
+- **对齐 ChatGPT Intelligent UI（加深）**：
+  1. **散文环绕卡片**：可选 1–2 句 lead → ```iui → 短 outro；弱模型 prime 改为 `brief_prose_wrap_ok`（仍禁 Markdown-as-UI / 工具抢先）。
+  2. **密度 token**：shadcn `--shad-gap` / `--shad-pad` / radius 16；`blockMargin: 14px 0` 让围栏与上下 prose 呼吸。
+  3. **轻入场**：根与子项 stagger enter（280ms / 55ms）；`genuiReveal` 更轻（6px / 320ms）。
+  4. **资源 / 天气 / 表单对标**：配方 successCriteria 写入散文环绕 + bento/折线区间图/Intake 分段规范。
+
+### Tests
+- fence-first hint asserts `brief_prose_wrap_ok` + `no_markdown_as_ui`.
+
+## 0.12.0-iui.24
+
+### Changed
+- **对齐 ChatGPT Intelligent UI 观感（shadcn 默认）**：
+  1. **资源 bento**：`stat.ring` 圆环表 + `spark` 折线 + `hint` / `tone=danger`（内存告警红字）。
+  2. **天气卡**：`chart kind=line` 逐小时折线；`chart kind=range`（`lo`/`hi`/`meta`）未来几天温度区间条。
+  3. **Intake 表单**：`radio.layout=segmented` 分段开关（中文|English）；`options: {label,desc}` 带说明单选；ChatGPT 紧凑密度。
+- 配方 `resource` / `weather` / `form` 按三张参考图重写；设计 token 圆角/间距/阴影贴近 ChatGPT。
+
+### Added
+- `stat.ring` / `stat.hint` / `stat.tone`；`radio.layout`；`chart.kind=range` + datum `lo`/`hi`/`meta`。
+- Pack：`RingGauge`、`PackLineChart`、progress `variant=ring`、segmented radio。
+
+## 0.12.0-iui.23
+
+### Added
+- **`booking` intent**（订票 / 机票 / 火车票 / 酒店预订）：from/to/date/passengers + `search_tickets` 配方；successShape 要求可填字段 + action。
+- 中文预览：订票卡 + 未登记可视兜底（课表）。
+
+### Changed
+- Weak-model **first-turn fence**：`buildFenceFirstHint` 增加 `no_prose_before_fence`；visual/booking 明确「不要等新意图」。
+- `planFormatRefereeCorrection` 对 booking / visual / form / map 也做 weak_fence 加严（与 manual/steps 同级）。
+- `askNeedsUi` 覆盖机票/火车票/航班/酒店/预订/ticket/flight/booking 等词。
+- `visual` 兜底补 soft successShape（结构化卡 + 主按钮）。
+
+### Tests
+- classify + steer + successShape + fence-first prime for booking/visual.
+
+## 0.12.0-iui.22
+
+### Changed
+- **Map / open links hardened**: `link` with safe http(s) href renders as a real open CTA pill (`target=_blank` + ↗); missing href shows Chinese empty chrome (`暂无可打开的链接`) instead of dead text.
+- Map intent `successShape.requireExternalHref: 1` — destination cards must include at least one real openable link (rejects label-only links).
+- Visual fallback recipe localized for menu-style Chinese UX; classifyAsk smoke covers map / menu / unlisted visual / plain greets.
+
+### Added
+- i18n: `status.empty.link` / `status.empty.map` / `status.error.link` (zh + en).
+- Link `tone`: `primary` | `secondary` | `ghost` for open CTAs.
+
+## 0.12.0-iui.21
+
+### Changed
+- Format referee: **whitelist is no longer the fence gate**. Any visual/UI-worthy ask must emit ```iui first (generic `visual` card / ```iui-html fallback). Named intents only tighten quality (recipes + successShape).
+- System prompt / SKILL / section-text: default-fence language; map + visual fallback documented.
+
+### Added
+- `map` intent + destination-card recipe (title, address, 高德/百度 links, optional plan_route / iui-html embed).
+- `classifyIntentAsk` / `askNeedsUi` / `isPlainAsk` in config (shared by plugin referee + client markdown-rescue).
+
+## 0.12.0-iui.20
+
+### Changed
+- shadcn default: product-clean density, CSS variables, enter/hover/active micro-interactions.
+- Core pack: interactive `steps` (checkable + expandable + progress), table sort/filter/export feedback, submit local confirm.
+
+### Fixed
+- Forms: custom checkbox/radio affordances; submit no longer stuck disabled when action omitted.
+
+## 0.12.0-iui.19
+
+### Added
+- `docs/ACCEPTANCE.md` — production/demo acceptance checklist (A–G); packaged in `files`.
+- CI: Playwright `smoke:fence-empty` wired into `.github/workflows/ci.yml` `check` job (current + Node 24, port 3191).
+
+### Changed
+- `docs/PUBLISH.md` retargeted to `0.12.0-iui.19`; references ACCEPTANCE hard gates.
+- Publish prep bump only — no MCP product path.
+
+## 0.12.0-iui.18
+
+### Added
+- Playwright smoke `scripts/smoke-fence-empty.mts` for ```iui``` fence mount + empty-state chrome + tabs/steps/button interaction (`pnpm smoke:fence-empty -- --url …`).
+- SKILL.md **交互规范（硬性 UX）**: actionable buttons, local-first, explicit empty states, feedback, prohibitions.
+
+### Changed
+- Empty `chart` `data`/`series` no longer rejected by guard — they render `EmptyState` like table/list/tabs.
+
+### Tests
+- `smoke:fence` includes status-block + skill-md; skill name assertion fixed to `iui`.
+- Chart-contract / schema / plugin-tool updated for empty-chart EmptyState.
+
+## 0.12.0-iui.17
+
+### Added
+- Productized ` ```iui-html ` sandbox chrome: reload, download HTML, dismissible errors, empty/streaming placeholders, host→sandbox measure command, localized stage labels.
+- Shared `StatusBlock` / `EmptyState` / `ErrorState` for core empty & error surfaces.
+- Empty states for table / list / chart / tabs / steps / keyvalue / select / card (stock + pack create-core).
+
+### Tests
+- html-sandbox product helpers; StatusBlock smoke.
+
+## 0.12.0-iui.16
+
+### Added
+- Native `steps` renderers for MUI / Ant Design / Chakra packs (checkable + expandable).
+- Manual QA referee hardening: require `type:steps` (≥3 with desc) + action button; forbid leftover compare `table`/`diff`; weak_fence steer for manuals.
+
+## 0.12.0-iui.15
+
+- Content-fit: recipes answer current ask only; no leftover compare cards
+- Manual/how-to intent: ≥3 ordered steps required (callout-only fails)
+- Steps UX: local checklist toggle + expand/collapse + progress
+- Referee/skill strengthened for manuals and steps
+
+# Changelog
+
 ## [Unreleased]
 
 ### 兼容性

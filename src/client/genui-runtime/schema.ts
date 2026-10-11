@@ -64,7 +64,7 @@ export const BUTTON_TONES = ['primary', 'danger', 'success', 'ghost'] as const
 export const BADGE_TONES = ['success', 'warn', 'danger', 'accent'] as const
 export const INPUT_TYPES = ['text', 'email', 'password', 'color'] as const
 export const CALLOUT_TONES = ['info', 'success', 'warning', 'error'] as const
-export const CHART_KINDS = ['bars', 'line', 'donut'] as const
+export const CHART_KINDS = ['bars', 'line', 'donut', 'range'] as const
 export const PLOT_KINDS = ['line', 'area', 'scatter'] as const
 export const MEDIA_ASPECT_RATIOS = ['16:9', '4:3', '1:1', '9:16'] as const
 export const MESH_SHAPES = ['box', 'sphere', 'cone', 'cylinder', 'torus'] as const
@@ -91,8 +91,13 @@ export const PROGRESS_VARIANTS = ['bar', 'ring'] as const
 export const CARD_TONES = ['info', 'success', 'warning', 'danger'] as const
 /** Hero cover tones. */
 export const HERO_TONES = ['accent', 'success', 'warning', 'danger'] as const
+/** Stat value / ring semantic tones (ChatGPT memory alert). */
+export const STAT_TONES = ['default', 'success', 'warning', 'danger'] as const
+/** Radio layout: vertical list or segmented pill. */
+export const RADIO_LAYOUTS = ['list', 'segmented'] as const
 /** Table cell renderers (`table.types`, one entry per column). */
 export const TABLE_CELL_TYPES = ['text', 'num', 'delta', 'bar', 'badge', 'spark', 'ring', 'index', 'group'] as const
+export const TABLE_LAYOUTS = ['table', 'cards', 'auto'] as const
 
 const schema = (
   required: readonly string[],
@@ -316,16 +321,16 @@ export const COMPONENT_SCHEMAS: Readonly<Record<string, ComponentSchema>> = {
   mermaid: schema(['code'], { ...nodeFields, code: 'string' }),
   svg: schema(['code'], { ...nodeFields, code: 'string', title: 'string', height: 'number' }),
   plot: schema(['series'], { ...nodeFields, series: 'array', xMin: 'number', xMax: 'number', yMin: 'number', yMax: 'number', title: 'string' }, {}, { nested: { series: plotSeriesSchema } }),
-  progress: schema(['value'], { ...nodeFields, value: 'number', label: 'string', valueLabel: 'string', variant: 'string', target: 'number' }, {}, { enums: { variant: PROGRESS_VARIANTS } }),
+  progress: schema(['value'], { ...nodeFields, value: 'number', label: 'string', valueLabel: 'string', variant: 'string', target: 'number', valueFrom: 'string' }, {}, { enums: { variant: PROGRESS_VARIANTS } }),
   // `items` joins the §175 aliases: it is the field name models reach for when
   // they enumerate a component's choices, and without it the node (and with it
   // the whole fence) is dropped.
   quiz: schema(['question', 'options'], { ...nodeFields, question: 'string', options: 'array', explanation: 'string', id: 'string', action: 'string' }, { title: 'question', text: 'question', choices: 'options', items: 'options' }),
-  radio: schema(['options'], { ...nodeFields, label: 'string', options: 'array', selected: 'number', action: 'string', group: 'string', answer: 'unknown', explanation: 'string' }, { items: 'options' }),
+  radio: schema(['options'], { ...nodeFields, label: 'string', options: 'array', selected: 'number', layout: 'string', action: 'string', group: 'string', answer: 'unknown', explanation: 'string' }, { items: 'options' }, { enums: { layout: RADIO_LAYOUTS } }),
   row: schema(['items'], { ...nodeFields, items: 'nodes', wrap: 'boolean', spacer: 'boolean' }),
   scene3d: schema(['meshes'], { ...nodeFields, title: 'string', meshes: 'array', ambient: 'number', background: 'string' }, {}, { nested: { meshes: sceneMeshSchema } }),
   select: schema(['options'], { ...nodeFields, label: 'string', options: 'array', action: 'string', selected: 'number', id: 'string' }, { items: 'options' }),
-  slider: schema([], { ...nodeFields, label: 'string', min: 'number', max: 'number', step: 'number', value: 'number', action: 'string', id: 'string' }),
+  slider: schema([], { ...nodeFields, label: 'string', min: 'number', max: 'number', step: 'number', value: 'number', action: 'string', id: 'string', local: 'boolean' }),
   spacer: schema([], nodeFields),
   hero: schema(['title'], {
     ...nodeFields,
@@ -337,16 +342,56 @@ export const COMPONENT_SCHEMAS: Readonly<Record<string, ComponentSchema>> = {
     spark: 'array',
     tone: 'string',
   }, {}, { enums: { tone: HERO_TONES } }),
-  stat: schema(['label', 'value'], { ...nodeFields, label: 'string', value: 'string', delta: 'string', spark: 'array', size: 'string' }, {}, { enums: { size: STAT_SIZES } }),
-  steps: schema(['steps'], { ...nodeFields, steps: 'array', current: 'number' }, { items: 'steps' }, { nested: { steps: stepsRecordSchema } }),
+  stat: schema(['label', 'value'], { ...nodeFields, label: 'string', value: 'string', delta: 'string', spark: 'array', size: 'string', ring: 'number', hint: 'string', tone: 'string', valueFrom: 'string' }, {}, { enums: { size: STAT_SIZES, tone: STAT_TONES } }),
+  steps: schema(['steps'], { ...nodeFields, steps: 'array', current: 'number', checkable: 'boolean', expandable: 'boolean' }, { items: 'steps' }, { nested: { steps: stepsRecordSchema } }),
   submit: schema(['label'], { ...nodeFields, label: 'string', action: 'string', resetAction: 'string', groups: 'array' }),
   switch: schema(['label'], { ...nodeFields, label: 'string', checked: 'boolean', action: 'string' }),
-  table: schema(['columns', 'rows'], { ...nodeFields, columns: 'array', rows: 'array', types: 'array', total: 'boolean', details: 'array', filter: 'string', filterColumn: 'number', sortField: 'string', export: 'boolean' }, { headers: 'columns', data: 'rows', items: 'rows' }),
+  table: schema(['columns', 'rows'], { ...nodeFields, columns: 'array', rows: 'array', types: 'array', total: 'boolean', details: 'array', filter: 'string', filterColumn: 'number', sortField: 'string', export: 'boolean', layout: 'string' }, { headers: 'columns', data: 'rows', items: 'rows' }, { enums: { layout: TABLE_LAYOUTS } }),
   tabs: schema(['tabs'], { ...nodeFields, tabs: 'array' }, {}, { nested: { tabs: tabHolderSchema } }),
   text: schema(['content'], { ...nodeFields, content: 'string', size: 'string', center: 'boolean' }, { text: 'content' }, { enums: { size: TEXT_SIZES } }),
   textarea: schema([], { ...nodeFields, label: 'string', placeholder: 'string', rows: 'number', value: 'string', action: 'string', id: 'string' }),
   timeline: schema(['items'], { ...nodeFields, items: 'array' }, {}, { nested: { items: timelineRecordSchema } }),
   video: schema(['src'], { ...nodeFields, src: 'string', alt: 'string', poster: 'string', loop: 'boolean', muted: 'boolean', aspectRatio: 'string' }, { url: 'src', link: 'src' }, { enums: { aspectRatio: MEDIA_ASPECT_RATIOS } }),
+  entity: schema(['title'], {
+    ...nodeFields,
+    title: 'string',
+    subtitle: 'string',
+    label: 'string',
+    tone: 'string',
+    icon: 'string',
+    href: 'string',
+    action: 'string',
+  }, { name: 'title', text: 'title' }, { enums: { tone: BADGE_TONES } }),
+  chips: schema(['items'], { ...nodeFields, items: 'array' }, { entities: 'items', chips: 'items' }),
+  map: schema([], {
+    ...nodeFields,
+    title: 'string',
+    address: 'string',
+    label: 'string',
+    lat: 'number',
+    lng: 'number',
+    zoom: 'number',
+    provider: 'string',
+    query: 'string',
+    facts: 'array',
+    links: 'array',
+    embed: 'string',
+    markers: 'array',
+    height: 'number',
+    path: 'array',
+    route: 'boolean',
+  }, {
+    subtitle: 'address',
+    place: 'address',
+    q: 'query',
+    latitude: 'lat',
+    longitude: 'lng',
+    lon: 'lng',
+    coords: 'lat',
+    pins: 'markers',
+    waypoints: 'markers',
+    polyline: 'path',
+  }),
 } as const
 
 export const GENUI_NATIVE_TYPES: ReadonlySet<string> = new Set(Object.keys(COMPONENT_SCHEMAS))

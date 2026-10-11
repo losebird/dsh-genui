@@ -19,14 +19,16 @@ import {
 } from './forms.tsx'
 import { CheckboxNode } from './checkbox.tsx'
 import {
-  AccordionNode, BreadcrumbNode, CalloutNode, CodeNode, CopyNode, DiffNode, FileTreeNode, JsonNode, KeyValueNode,
-  MermaidNode, PlotNode, QuizNode, Scene3DNode, StepsNode, TabsNode, TimelineNode,
+  AccordionNode, BreadcrumbNode, CalloutNode, ChipsNode, CodeNode, CopyNode, DiffNode, EntityNode, FileTreeNode, JsonNode, KeyValueNode,
+  MapNode, MermaidNode, PlotNode, QuizNode, Scene3DNode, StepsNode, TabsNode, TimelineNode,
 } from './advanced.tsx'
 import { DiagramNode } from './diagram/index.tsx'
 import { ImageNode } from './image.tsx'
 import { SvgNode } from './svg.tsx'
+import { EmptyState } from '../ui/StatusBlock.tsx'
 
 import { EChartNode } from '../EChartNode.tsx'
+
 
 /** Custom node data shape (declared locally: pristine hosts export no type). */
 interface GenuiCustomNode {
@@ -283,13 +285,35 @@ export function renderNode(
     case 'select': return <SelectNode key={key} node={node} onAction={onAction} answers={answers} />
     case 'checkbox': return <CheckboxNode key={key} node={node} onAction={onAction} answers={answers} />
     case 'link': {
-      // Honest affordance: with a whitelisted href this is a REAL anchor;
-      // without one it is plain styled text (a dead clickable-looking button
-      // was the same complaint class as the disabled-button fix).
+      // Honest affordance: with a safe http(s)/mailto href this is a REAL open
+      // CTA (target=_blank + noopener). Without href → empty chrome, never a
+      // dead clickable-looking control (same class as disabled-button fix).
       const href = node.href
-      return href !== undefined
-        ? <a key={key} className={css.link} href={href} target="_blank" rel="noopener noreferrer">{renderInline(node.label, false)}</a>
-        : <span key={key} className={css.linkText}>{renderInline(node.label, false)}</span>
+      if (href === undefined || href.trim() === '') {
+        const detail = typeof node.label === 'string' && node.label.trim() !== '' ? node.label : undefined
+        return detail !== undefined
+          ? <EmptyState key={key} kind="link" detail={detail} />
+          : <EmptyState key={key} kind="link" />
+      }
+      const tone = node.tone ?? 'secondary'
+      const toneCls = tone === 'primary'
+        ? css.linkPrimary
+        : tone === 'ghost'
+          ? css.linkGhost
+          : css.linkSecondary
+      return (
+        <a
+          key={key}
+          className={`${css.link} ${toneCls ?? ''}`.trim()}
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          data-iui-link="open"
+        >
+          <span className={css.linkLabel}>{renderInline(node.label, false)}</span>
+          <span className={css.linkHint} aria-hidden>↗</span>
+        </a>
+      )
     }
     case 'image': return <ImageNode key={`${key}:${node.src}`} node={node} />
     case 'audio': return <AudioNode key={`${key}:${node.src}`} node={node} />
@@ -409,6 +433,13 @@ export function renderNode(
       const items = bound === undefined
         ? all
         : all.filter(item => listItemText(item).toLowerCase().includes(bound))
+      if (items.length === 0) {
+        return (
+          <div key={key}>
+            <EmptyState kind="list" {...(bound !== undefined ? { detail: t('status.filteredEmpty') } : {})} />
+          </div>
+        )
+      }
       return (
         <div key={key} className={css.list}>
           {items.map((item, i) => (
@@ -468,6 +499,9 @@ export function renderNode(
     case 'quiz': return <QuizNode key={key} node={node} onAction={onAction} />
     case 'diagram': return <DiagramNode key={key} node={node} />
 
+    case 'entity': return <EntityNode key={key} node={node} onAction={onAction} />
+    case 'chips': return <ChipsNode key={key} node={node} onAction={onAction} />
+    case 'map': return <MapNode key={key} node={node} />
     case 'echart': return <EChartNode key={key} node={node} />
     default: {
       // Plugin-registered custom types: a plugin ships a renderer through

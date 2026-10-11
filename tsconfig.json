@@ -27,7 +27,15 @@
     "rootDir": "src",
     "outDir": "lib",
     "emitDeclarationOnly": true,
-    "declarationDir": "lib/types"
+    "declarationDir": "lib/types",
+    "paths": {
+      "@deepseek-ai/dsh-client-ui-primitives": [
+        "/home/box/.local/node/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-client-ui-primitives/lib/types/index.d.ts"
+      ],
+      "@deepseek-ai/dsh-client-ui-primitives/*": [
+        "/home/box/.local/node/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-client-ui-primitives/lib/types/*"
+      ]
+    }
   },
   "include": [
     "src"

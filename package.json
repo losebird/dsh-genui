@@ -1,7 +1,7 @@
 {
-  "name": "@changfenhuang/dsh-genui",
-  "description": "GenUI for DeepSeek Harness: interactive UI components rendered inline in assistant replies via the ```dsh-ui fence — layout, charts, plots, forms, quizzes, mermaid, 3D scenes, and an action event loop back to the model. Ships the fence-teaching host plugin, the browser renderer (client half), and the genui skill.",
-  "version": "0.11.4",
+  "name": "@losebird/iui",
+  "description": "IUI for DeepSeek Harness: bubble-native free HTML/CSS/JS sandbox via ```iui-html. Plugin-only (no MCP). Fork of omdsh-dev/dsh-genui (MIT).",
+  "version": "0.13.0-iui.18",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/plugin/index.d.ts",
@@ -24,24 +24,28 @@
     "./skill": "./SKILL.md"
   },
   "files": [
-    "lib/index.js",
-    "lib/client.js",
-    "lib/assets/mermaid.js",
-    "lib/assets/three.js",
-    "lib/types/plugin/index.d.ts",
-    "lib/types/client/index.d.ts",
+    "lib",
+    "src",
     "SKILL.md",
     "README.md",
     "README.zh-CN.md",
     "CHANGELOG.md",
+    "LICENSE",
+    "NOTICE",
     "demo-prompts.md",
     "cordis.patch.yml",
-    "lib",
-    "src",
     "tsconfig.json",
     "tsdown.config.ts",
-    "lib/assets/echarts-core.js",
-    "lib/assets/echarts-full.js"
+    "docs/INSTALL.md",
+    "docs/SETTINGS.md",
+    "docs/UPGRADE.md",
+    "docs/PUBLISH.md",
+    "ARCHITECTURE.md",
+    "docs/ACCEPTANCE.md",
+    "docs/HARD-WALLS.md",
+    "docs/PLAN.zh-CN.md",
+    "docs/FORMAT-ROUTER.md",
+    "docs/REDESIGN-SANDBOX-FIRST.zh-CN.md"
   ],
   "publishConfig": {
     "access": "public"
@@ -58,11 +62,14 @@
   "keywords": [
     "dsh",
     "deepseek-harness",
+    "iui",
+    "intelligent-ui",
     "generative-ui",
     "plugin",
     "ui"
   ],
   "dependencies": {
+    "@deepseek-ai/schemastery": "3.18.4",
     "katex": "0.16.47",
     "mdast-util-from-markdown": "2.0.3",
     "react": "^18.3.1"
@@ -71,6 +78,7 @@
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/dsh-agent": "^0.1.2-rc.1 || ^0.1.5-alpha.1 || ^0.1.6-alpha.1 || ^0.1.7-alpha.1 || >=0.2.0-rc.1 <0.3.0-0",
     "@deepseek-ai/dsh-api-session-controller": "^0.1.2-rc.1 || ^0.1.5-alpha.1 || ^0.1.6-alpha.1 || ^0.1.7-alpha.1 || >=0.2.0-rc.1 <0.3.0-0",
+    "@deepseek-ai/dsh-client-locale": "^0.1.2-rc.1 || ^0.1.5-alpha.1 || ^0.1.6-alpha.1 || ^0.1.7-alpha.1 || >=0.2.0-rc.1 <0.3.0-0",
     "@deepseek-ai/dsh-client-store": "^0.1.2-rc.1 || ^0.1.5-alpha.1 || ^0.1.6-alpha.1 || ^0.1.7-alpha.1 || >=0.2.0-rc.1 <0.3.0-0",
     "@deepseek-ai/dsh-client-ui-chat": "^0.1.2-rc.1 || ^0.1.5-alpha.1 || ^0.1.6-alpha.1 || ^0.1.7-alpha.1 || >=0.2.0-rc.1 <0.3.0-0",
     "@deepseek-ai/dsh-client-ui-conversation": "^0.1.2-rc.1 || ^0.1.5-alpha.1 || ^0.1.6-alpha.1 || ^0.1.7-alpha.1 || >=0.2.0-rc.1 <0.3.0-0",
@@ -78,6 +86,7 @@
     "@deepseek-ai/dsh-client-ui-primitives": "^0.1.2-rc.1 || ^0.1.5-alpha.1 || ^0.1.6-alpha.1 || ^0.1.7-alpha.1 || >=0.2.0-rc.1 <0.3.0-0",
     "@deepseek-ai/dsh-client-ui-renderer": "^0.1.2-rc.1 || ^0.1.5-alpha.1 || ^0.1.6-alpha.1 || ^0.1.7-alpha.1 || >=0.2.0-rc.1 <0.3.0-0",
     "@deepseek-ai/dsh-client-ui-session": "^0.1.2-rc.1 || ^0.1.5-alpha.1 || ^0.1.6-alpha.1 || ^0.1.7-alpha.1 || >=0.2.0-rc.1 <0.3.0-0",
+    "@deepseek-ai/dsh-client-ui-settings": "^0.1.2-rc.1 || ^0.1.5-alpha.1 || ^0.1.6-alpha.1 || ^0.1.7-alpha.1 || >=0.2.0-rc.1 <0.3.0-0",
     "@deepseek-ai/dsh-client-ui-slots": "^0.1.2-rc.1 || ^0.1.5-alpha.1 || ^0.1.6-alpha.1 || ^0.1.7-alpha.1 || >=0.2.0-rc.1 <0.3.0-0",
     "@deepseek-ai/dsh-client-ui-tool": "^0.1.2-rc.1 || ^0.1.5-alpha.1 || ^0.1.6-alpha.1 || ^0.1.7-alpha.1 || >=0.2.0-rc.1 <0.3.0-0",
     "@deepseek-ai/dsh-llm": "^0.1.2-rc.1 || ^0.1.5-alpha.1 || ^0.1.6-alpha.1 || ^0.1.7-alpha.1 || >=0.2.0-rc.1 <0.3.0-0",
@@ -89,6 +98,7 @@
     "react": "^18.0.0 || ^19.0.0"
   },
   "devDependencies": {
+    "@chakra-ui/react": "2.8.2",
     "@deepseek-ai/cordis": "4.0.2",
     "@deepseek-ai/cordis-plugin-include": "1.0.7",
     "@deepseek-ai/cordis-plugin-loader": "1.0.3",
@@ -144,15 +154,21 @@
     "@deepseek-ai/dsh-util-values": "0.1.2-rc.1",
     "@deepseek-ai/dsh-util-workspace-path": "0.1.2-rc.1",
     "@deepseek-ai/dsh-workspace": "0.1.2-rc.1",
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
+    "@mui/material": "^6.5.0",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/react": "^16.0.0",
+    "@tsdown/css": "^0.23.0",
     "@types/katex": "0.16.8",
     "@types/node": "^22.19.0",
     "@types/react": "^18.0.0",
     "@types/react-dom": "^18.0.0",
     "@types/three": "^0.185.4",
+    "antd": "^5.29.3",
     "echarts": "^5.6.0",
     "echarts-wordcloud": "2.1.0",
+    "framer-motion": "^11.18.2",
     "jsdom": "^25.0.0",
     "lightningcss": "^1.25.0",
     "mermaid": "11.16.0",
@@ -171,14 +187,24 @@
     "test": "vitest run",
     "check": "node scripts/clean.mjs && tsc -p tsconfig.json && vitest run && tsdown && node scripts/check-standalone.mjs",
     "check:host-api": "node scripts/check-host-api.mjs",
-    "prepack": "node scripts/prepack.mjs"
+    "prepack": "node scripts/prepack.mjs",
+    "smoke:fence": "vitest run tests/format-referee.spec.ts tests/html-sandbox.spec.ts tests/composer-bridge.spec.ts tests/user-templates.spec.ts tests/status-block.spec.ts tests/skill-md.spec.ts tests/binding-parse.spec.ts tests/genui-shape-json.spec.ts tests/appdata-runtime.spec.ts tests/progressive-mount.spec.ts tests/fence-ops.spec.ts tests/format-router.spec.ts tests/structured-outputs.spec.ts tests/map-embed.spec.ts",
+    "pack:dry": "node scripts/verify-pack.mjs",
+    "version:print": "node -p \"require(\\\"./package.json\\\").version\"",
+    "smoke:fence-empty": "tsx scripts/smoke-fence-empty.mts",
+    "e2e:session": "tsx scripts/e2e-session.mts",
+    "shots:sandbox-hd": "tsx scripts/render-sandbox-hd-shots.mts"
   },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
     },
     "client": {
-      "inject": [],
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-locale"
+      ],
       "platform": "web"
     }
   },
@@ -234,6 +260,12 @@
       "optional": true
     },
     "@deepseek-ai/dsh-util-values": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-settings": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-locale": {
       "optional": true
     }
   }

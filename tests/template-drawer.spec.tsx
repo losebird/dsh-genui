@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
-// TemplateDrawer: the GenUI template center (0.9.4) — category filter,
-// card grid, in-place demo preview, and the "try it" hook.
+// TemplateDrawer: sandbox-first (P1-DEAD-SURFACE) — no GenuiBlock catalog preview.
 import { cleanup, fireEvent, render, screen, act } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TemplateDrawer } from '../src/client/TemplateDrawer.tsx'
@@ -30,20 +29,20 @@ describe('TemplateDrawer', () => {
     }
   })
 
-  it('分类过滤：点「测验」只显示图表类模板', () => {
+  it('分类过滤：点「测验」只显示测验类模板', () => {
     renderDrawer()
     fireEvent.click(screen.getByRole('tab', { name: '测验' }))
     expect(screen.queryByText('项目仪表盘')).toBeNull()
     expect(screen.getByText('随堂测验')).toBeTruthy()
   })
 
-  it('点击卡片：预览渲染 demo 并显示「试用/复制」', async () => {
+  it('点击卡片：显示沙箱提示与试用/复制（无 GenuiBlock）', async () => {
     renderDrawer()
     fireEvent.click(screen.getByText('项目仪表盘'))
-    // Demo 预览由 GenuiBlock 渲染：首屏应有示例标题与 stat 标签
     const preview = document.querySelector('[data-genui-template-preview]')
     expect(preview).toBeTruthy()
-    expect(screen.getByText('本周关键指标')).toBeTruthy()
+    expect(document.querySelector('[data-iui-legacy-catalog="1"]')).toBeTruthy()
+    expect(preview!.textContent).toMatch(/目录组件预览已移除|Catalog previews removed/)
     expect(screen.getByRole('button', { name: '试用：插入输入框' })).toBeTruthy()
     expect(screen.getByRole('button', { name: /复制指令/ })).toBeTruthy()
   })
@@ -54,7 +53,6 @@ describe('TemplateDrawer', () => {
     fireEvent.click(screen.getByText('项目仪表盘'))
     fireEvent.click(screen.getByRole('button', { name: '试用：插入输入框' }))
     expect(onUse).toHaveBeenCalledTimes(1)
-    expect(onUse.mock.calls[0][0]).toContain('dsh-ui')
     expect(onUse.mock.calls[0][0]).toContain('仪表盘')
   })
 
@@ -68,14 +66,12 @@ describe('TemplateDrawer', () => {
       fireEvent.click(screen.getByRole('button', { name: /复制指令/ }))
     })
     expect(writeText).toHaveBeenCalledTimes(1)
-    expect(writeText.mock.calls[0][0]).toContain('dsh-ui')
   })
 
-  it('成就面板渲染成就页（dsh-ui 自渲染，无多余 mode tabs）', () => {
+  it('成就面板显示沙箱提示（无目录 GenuiBlock）', () => {
     const withTab = render(<TemplateDrawer tab="achievements" onUse={() => {}} />)
     expect(document.querySelector('[data-genui-achievements]')).toBeTruthy()
-    expect(screen.getByText(/GenUI 探索成就/)).toBeTruthy()
-    // 抽屉内不再有「模板|成就」mode 切换（面板 header 按钮负责）
+    expect(document.querySelector('[data-iui-legacy-catalog="1"]')).toBeTruthy()
     expect(screen.queryByRole('tab', { name: '成就' })).toBeNull()
     withTab.unmount()
   })

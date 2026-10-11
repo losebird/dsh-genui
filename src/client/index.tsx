@@ -31,13 +31,20 @@ import * as primitives from '@deepseek-ai/dsh-client-ui-primitives'
 import { installDomFenceRenderer } from './dom-fence.tsx'
 import { renderGenuiFence, type GenuiFenceContext } from './fence-render.tsx'
 import { renderSvgFence } from './svg-fence.tsx'
+import { renderHtmlFence } from './html-fence.tsx'
 import { createPanelSlashSource } from './panel-command.ts'
 import { GenuiPanel, type GenuiPanelInjected } from './panel.tsx'
 import { GenuiToolView } from './toolview.tsx'
 import { mountAchievementToasts } from './achievement-toast.tsx'
+import { mountTipToasts } from './tip-toast.tsx'
 import { bridgeHostLocale } from './i18n/index.ts'
 import type { InputTriggerServiceContract } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import { assetUrl } from './asset-loader.ts'
+import { startRuntimeConfigWatch } from './runtime-config.ts'
+import { startBindingWatch } from './binding-store.ts'
+import { installIuiSettings } from './settings/index.ts'
+import { installMarkdownRescue } from './markdown-rescue.tsx'
+import { registerComposerDraftSetter, writeComposerEditable, findComposerEditable } from './composer-bridge.ts'
 
 /** Host extension surface the registry channel needs (absent on pristine). */
 type HostFenceExt = {
@@ -66,6 +73,16 @@ export function prefetchGenuiAssets(): void {
 function panelActionSend(ctx: Context, sessionId: SessionId): GenuiPanelInjected {
   const scoped = ctx.sessions.scope(sessionId)
   const conversation = scoped?.get('conversation') as IConversation | undefined
+  const setDraft = (draft: string): boolean => {
+    const input = (conversation as unknown as {
+      input?: { for?(actx: unknown): { setDraft(text: string): void } | undefined }
+    } | undefined)?.input?.for?.(scoped)
+    if (input === undefined) return false
+    input.setDraft(draft)
+    return true
+  }
+  registerComposerDraftSetter(setDraft)
+
   return {
     sessionId,
     sendGenuiAction: (action, payload) => {
@@ -73,23 +90,16 @@ function panelActionSend(ctx: Context, sessionId: SessionId): GenuiPanelInjected
       const payloadText = Object.keys(payload).length === 0
         ? ''
         : ` 组件数据: ${JSON.stringify(payload)}`
-      void conversation.send(`[genui-action] ${action}。用户刚刚在面板中触发了动作 "${action}"，请根据组件数据执行相应操作，只输出一个 panel:true 的 dsh-ui 围栏来更新面板，回复文本至多一行 10 字以内的确认（如"已刷新"），不要解释、不要普通围栏。${payloadText}`).catch((err: unknown) => {
+      void conversation.send(`[genui-action] ${action}。用户刚刚在面板中触发了动作 "${action}"，请根据组件数据执行相应操作，只输出一个 ${'```'}iui-html 沙箱页更新界面（面板不支持目录组件；沙箱挂在聊天气泡）。回复文本至多一行 10 字以内的确认（如"已刷新"），不要解释。${payloadText}`).catch((err: unknown) => {
         // A failed prompt (session gone, agent busy) drops the action; the
         // panel stays interactive — the component is not disabled. Log the
         // failure WITHOUT the action payload or any secret values (the
         // message may contain field content).
-        console.warn(`[genui] 面板动作 "${action}" 发送失败（session ${sessionId}）：`, err instanceof Error ? err.message : String(err))
+        console.warn(`[iui] 面板动作 "${action}" 发送失败（session ${sessionId}）：`, err instanceof Error ? err.message : String(err))
       })
     },
     insertTemplate: (text) => {
-      // Same insert channel as dsh-memory's organizeMemory: the standard
-      // conversation.input.for(scope).setDraft — templates land in the
-      // composer draft, not a queued message, so the user can edit before
-      // sending.
-      const input = (conversation as unknown as {
-        input?: { for?(actx: unknown): { setDraft(text: string): void } | undefined }
-      } | undefined)?.input?.for?.(scoped)
-      input?.setDraft(text)
+      setDraft(text)
     },
   }
 }
@@ -101,10 +111,10 @@ function sendPanelInstruction(ctx: Context, sessionId: SessionId, instruction: s
   const scoped = ctx.sessions.scope(sessionId)
   const conversation = scoped?.get('conversation') as IConversation | undefined
   if (conversation === undefined) return
-  void conversation.send(`用户执行了 /panel 并请求：${instruction}。请只输出一个 panel:true 的 dsh-ui 围栏来更新会话面板，内容按请求定制；回复文本至多一行 10 字以内的确认（如"已更新"），不要解释、不要普通围栏。`).catch((err: unknown) => {
+  void conversation.send(`用户执行了 /panel 并请求：${instruction}。请输出一个 ${'```'}iui-html 沙箱页（css/html/js）按请求定制界面；回复文本至多一行 10 字以内的确认（如"已更新"），不要解释、不要目录组件围栏。`).catch((err: unknown) => {
     // A failed prompt drops the instruction; the default panel stays
     // visible. Log without the instruction text (may contain secrets).
-    console.warn(`[genui] /panel 指令发送失败（session ${sessionId}）：`, err instanceof Error ? err.message : String(err))
+    console.warn(`[iui] /panel 指令发送失败（session ${sessionId}）：`, err instanceof Error ? err.message : String(err))
   })
 }
 
@@ -120,7 +130,7 @@ function sendInlineGenuiAction(ctx: Context, sessionId: SessionId, action: strin
   const payloadText = Object.keys(payload).length === 0
     ? ''
     : ` 组件数据: ${JSON.stringify(payload)}`
-  void conversation.send(`[genui-action] ${action}。用户刚刚在界面中触发了动作 "${action}"，请根据组件数据执行相应操作，并用 dsh-ui 输出更新后的界面。${payloadText}`).catch(() => {
+  void conversation.send(`[genui-action] ${action}。用户刚刚在界面中触发了动作 "${action}"，请根据组件数据执行相应操作，并用 ${'```'}iui-html（css/html/js 沙箱）输出更新后的界面。不要用目录组件 JSON。${payloadText}`).catch(() => {
     // A failed prompt (session gone, agent busy) drops the action;
     // the UI stays interactive — the component is not disabled.
   })
@@ -139,7 +149,18 @@ function forcedDomChannel(): boolean {
 /** Cordis client entry: register the fence renderer on boot, the keyed
  * toolview for the render_ui tool, and the session panel dock; returning the
  * disposers lets cordis tear all registrations down on plugin unload. */
+
 export function apply(ctx: Context): () => void {
+const stopRuntimeWatch = startRuntimeConfigWatch()
+  const stopBindingWatch = startBindingWatch()
+  // Durable DOM fallback so Settings "insert" works even before a panel dock mounts.
+  const stopComposerFallback = registerComposerDraftSetter((text) => {
+    const el = findComposerEditable()
+    if (el === null) return false
+    return writeComposerEditable(el, text)
+  })
+  const stopSettings = installIuiSettings(ctx)
+  const stopMdRescue = installMarkdownRescue(ctx)
   // Fence channel selection: the registry extension point when the host
   // ships it (contract line), the DOM observer otherwise (pristine line).
   // One plugin build serves both deployments.
@@ -152,9 +173,9 @@ export function apply(ctx: Context): () => void {
   const registerFn = (primitives as unknown as HostFenceExt).registerFenceRenderer
   const useRegistry = typeof registerFn === 'function' && !forcedDomChannel()
   const channel = useRegistry ? 'registry' : 'dom'
-  console.info(`[genui] client active; fence-channel=${channel}`)
+  console.info(`[iui] client active; fence-channel=${channel}`)
   const disposers: Array<() => void> = useRegistry
-    ? [localeDispose, registerFn!('dsh-ui', renderGenuiFence), registerFn!('svg', renderSvgFence)]
+    ? [localeDispose, registerFn!('iui', renderGenuiFence), registerFn!('dsh-ui', renderGenuiFence), registerFn!('svg', renderSvgFence), registerFn!('iui-html', renderHtmlFence)]
     : [localeDispose, installDomFenceRenderer(ctx, (sessionId, action, payload) => sendInlineGenuiAction(ctx, sessionId, action, payload))]
   // Idle prefetch of the lazy engine assets: the browser downloads them at
   // LOW priority whenever the page is idle, so the first mermaid/3D node in
@@ -163,6 +184,12 @@ export function apply(ctx: Context): () => void {
   prefetchGenuiAssets()
   // Achievement toasts (0.9.5): a body-level stack independent of the panel.
   disposers.push(mountAchievementToasts())
+  disposers.push(mountTipToasts())
+  disposers.push(stopMdRescue)
+  disposers.push(stopSettings)
+  disposers.push(stopRuntimeWatch)
+  disposers.push(stopBindingWatch)
+  disposers.push(stopComposerFallback)
   // Keyed toolview: the harness dispatches 'tool.call.toolview' by wire tool
   // name; registering under 'render_ui' gives the tool's result card the
   // GenUI renderer (reading the repaired spec from result meta). The toolview
@@ -220,7 +247,7 @@ export function apply(ctx: Context): () => void {
 // (optional injection): hosts with the service get /panel registered in any
 // arrival order, hosts without it never register /panel — and the renderer
 // itself never depends on the service either way.
-export const inject = ['slots', 'sessions']
+export const inject = ['slots', 'sessions', 'locale', 'configForms']
 
 // Re-export the registry renderer for the test suite (setup.ts registers it
 // exactly like apply() does on contract hosts).

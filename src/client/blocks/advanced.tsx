@@ -13,10 +13,15 @@ import { PlotBlock } from '../PlotBlock.tsx'
 import { renderNode } from './render-node.tsx'
 import { codeBlockLabels, diffBlockLabels, jsonTreeLabels } from '../primitive-labels.ts'
 import { useT } from '../i18n/index.ts'
+import { EmptyState } from '../ui/StatusBlock.tsx'
+import {
+  buildDefaultMapLinks,
+  resolveMapSurface,
+} from '../../shared/map-embed.ts'
 import type { AnswersState, GenuiBlockProps } from './state.ts'
 import type {
   GenuiAccordion, GenuiBreadcrumb, GenuiCallout, GenuiCode, GenuiCopy, GenuiDiff, GenuiFileTree, GenuiFileTreeNode,
-  GenuiJson, GenuiKeyValue, GenuiMermaid, GenuiPlot, GenuiQuiz, GenuiScene3D, GenuiSteps, GenuiTabs, GenuiTimeline,
+  GenuiChips, GenuiEntity, GenuiJson, GenuiKeyValue, GenuiMap, GenuiMermaid, GenuiPlot, GenuiQuiz, GenuiScene3D, GenuiSteps, GenuiTabs, GenuiTimeline,
 } from '../spec.ts'
 
 const CALLOUT_TONES: Record<string, string> = {
@@ -35,32 +40,113 @@ export const CalloutNode = memo(function CalloutNode({ node }: { node: GenuiCall
   )
 })
 
-/** Steps: a vertical progress checklist with an optional current index. */
+/** Steps: interactive vertical checklist — local check + expand/collapse. */
 export const StepsNode = memo(function StepsNode({ steps }: { steps: GenuiSteps }) {
+  const t = useT()
   const list = steps.steps.slice(0, GENUI_LIMITS.maxSteps)
-  const current = steps.current ?? list.length
+  const checkable = steps.checkable !== false
+  const expandable = steps.expandable !== false
+  const initialDone = Math.max(0, Math.min(steps.current ?? 0, list.length))
+  const [done, setDone] = useState<ReadonlySet<number>>(() => {
+    const seed = new Set<number>()
+    for (let i = 0; i < initialDone; i++) seed.add(i)
+    return seed
+  })
+  const [open, setOpen] = useState<number | null>(() => {
+    for (let i = 0; i < list.length; i++) {
+      if (i >= initialDone) return i
+    }
+    return list.length > 0 ? 0 : null
+  })
+
+  const toggleDone = (index: number): void => {
+    if (!checkable) return
+    setDone(prev => {
+      const next = new Set(prev)
+      if (next.has(index)) next.delete(index)
+      else next.add(index)
+      return next
+    })
+  }
+
+  const firstOpen = (() => {
+    for (let i = 0; i < list.length; i++) {
+      if (!done.has(i)) return i
+    }
+    return -1
+  })()
+  const progress = list.length === 0 ? 0 : Math.round((done.size / list.length) * 100)
+
+  if (list.length === 0) {
+    return <EmptyState kind="steps" />
+  }
+
   return (
-    <ol className={css.steps}>
-      {list.map((step, i) => {
-        const done = i < current
-        const active = i === current
-        return (
-          <li key={i} className={`${css.step} ${done ? css.stepDone : ''} ${active ? css.stepActive : ''}`}>
-            <span className={css.stepMarker}>{done ? '✓' : String(i + 1)}</span>
-            <span className={css.stepContent}>
-              <span className={css.stepTitle}>{renderInline(step.title)}</span>
-              {step.desc !== undefined && <span className={css.stepDesc}>{renderInline(step.desc)}</span>}
-            </span>
-          </li>
-        )
-      })}
-    </ol>
+    <div className={css.stepsWrap} data-genui-steps data-checkable={checkable || undefined}>
+      {checkable && list.length > 0 && (
+        <div className={css.stepsProgress} aria-live="polite">
+          <span className={css.stepsProgressLabel}>
+            {t('block.stepsProgress', { done: done.size, total: list.length })}
+          </span>
+          <div className={css.stepsProgressTrack} role="progressbar" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}>
+            <div className={css.stepsProgressFill} style={{ width: `${progress}%` }} />
+          </div>
+        </div>
+      )}
+      <ol className={css.steps}>
+        {list.map((step, i) => {
+          const isDone = done.has(i)
+          const isActive = !isDone && i === firstOpen
+          const hasBody = typeof step.desc === 'string' && step.desc.length > 0
+          const isOpen = expandable ? open === i : true
+          return (
+            <li
+              key={i}
+              className={`${css.step} ${isDone ? css.stepDone : ''} ${isActive ? css.stepActive : ''}`}
+            >
+              {checkable ? (
+                <button
+                  type="button"
+                  className={css.stepMarker}
+                  aria-pressed={isDone}
+                  aria-label={isDone ? t('block.stepsUncheck', { n: i + 1 }) : t('block.stepsCheck', { n: i + 1 })}
+                  onClick={() => toggleDone(i)}
+                >
+                  {isDone ? '✓' : String(i + 1)}
+                </button>
+              ) : (
+                <span className={css.stepMarker}>{isDone ? '✓' : String(i + 1)}</span>
+              )}
+              <div className={css.stepContent}>
+                {expandable && hasBody ? (
+                  <button
+                    type="button"
+                    className={css.stepHead}
+                    aria-expanded={isOpen}
+                    onClick={() => setOpen(isOpen ? null : i)}
+                  >
+                    <span className={css.stepTitle}>{renderInline(step.title, false)}</span>
+                    <span className={css.stepChevron} data-open={isOpen} aria-hidden>▸</span>
+                  </button>
+                ) : (
+                  <span className={css.stepTitle}>{renderInline(step.title)}</span>
+                )}
+                {hasBody && isOpen && (
+                  <span className={css.stepDesc}>{renderInline(step.desc!)}</span>
+                )}
+              </div>
+            </li>
+          )
+        })}
+      </ol>
+    </div>
   )
 })
 
 /** KeyValue: a definition list for configs and metadata. */
 export const KeyValueNode = memo(function KeyValueNode({ node }: { node: GenuiKeyValue }) {
   const pairs = node.pairs.slice(0, GENUI_LIMITS.maxKeyValuePairs)
+  if (pairs.length === 0) return <EmptyState kind="keyvalue" />
   return (
     <dl className={css.keyvalue}>
       {pairs.map((pair, i) => (
@@ -130,14 +216,16 @@ export function TabsNode({ tabs, onAction, depth = 0, answers }: {
   const safeActive = list.length === 0 ? 0 : Math.min(active, list.length - 1)
   const current = list[safeActive]
   useEffect(() => {
+    if (list.length === 0) return
     if (safeActive !== active) setActive(safeActive)
-  }, [active, safeActive])
+  }, [active, safeActive, list.length])
   const move = (next: number): void => {
     if (list.length === 0) return
     const n = (next + list.length) % list.length
     setActive(n)
     document.getElementById(`${uid}-tab-${n}`)?.focus()
   }
+  if (list.length === 0) return <EmptyState kind="tabs" />
   return (
     <div className={css.tabs}>
       <div
@@ -535,3 +623,237 @@ export const BreadcrumbNode = memo(function BreadcrumbNode({ node }: { node: Gen
  * hundred ms of trailing delay is imperceptible — and it stops bursts of
  * queued user turns.
  */
+
+
+const MAP_EMBED_HOSTS = new Set([
+  'www.openstreetmap.org',
+  'openstreetmap.org',
+  'maps.google.com',
+  'www.google.com',
+  'www.bing.com',
+  'uri.amap.com',
+  'map.baidu.com',
+  'nominatim.openstreetmap.org',
+])
+
+function safeEmbedUrl(raw: string | undefined): string | undefined {
+  if (raw === undefined || raw.trim() === '') return undefined
+  try {
+    const u = new URL(raw)
+    if (u.protocol !== 'https:') return undefined
+    const host = u.hostname.toLowerCase()
+    if (![...MAP_EMBED_HOSTS].some((h) => host === h || host.endsWith(`.${h}`))) {
+      if (!/(map|maps|osm|leaflet)/i.test(host + u.pathname)) return undefined
+    }
+    return u.toString()
+  } catch {
+    return undefined
+  }
+}
+
+/** Entity chip — person/place/thing with optional href/action. */
+export function EntityNode({ node, onAction }: {
+  node: GenuiEntity
+  onAction?: GenuiBlockProps['onAction']
+}) {
+  const tone = node.tone ?? 'accent'
+  const body = (
+    <>
+      {node.icon !== undefined && <span className={css.entityIcon} aria-hidden>{node.icon}</span>}
+      <span className={css.entityBody}>
+        <span className={css.entityTitle}>{renderInline(node.title, false)}</span>
+        {node.subtitle !== undefined && <span className={css.entitySub}>{renderInline(node.subtitle, false)}</span>}
+      </span>
+      {node.label !== undefined && <span className={css.entityPill}>{renderInline(node.label, false)}</span>}
+    </>
+  )
+  if (node.href !== undefined && node.href.trim() !== '') {
+    return (
+      <a className={`${css.entity} ${css[`entity_${tone}`] ?? ''}`} href={node.href} target="_blank" rel="noopener noreferrer" data-iui-entity="link">
+        {body}
+      </a>
+    )
+  }
+  if (node.action !== undefined && onAction !== undefined) {
+    return (
+      <button
+        type="button"
+        className={`${css.entity} ${css[`entity_${tone}`] ?? ''}`}
+        data-iui-entity="action"
+        onClick={() => onAction(node.action!, { type: 'entity', title: node.title })}
+      >
+        {body}
+      </button>
+    )
+  }
+  return <span className={`${css.entity} ${css[`entity_${tone}`] ?? ''}`} data-iui-entity="static">{body}</span>
+}
+
+/** Horizontal wrap of entity chips. */
+export function ChipsNode({ node, onAction }: {
+  node: GenuiChips
+  onAction?: GenuiBlockProps['onAction']
+}) {
+  const items = (node.items ?? []).slice(0, GENUI_LIMITS.maxListItems)
+  if (items.length === 0) return <EmptyState kind="list" detail="暂无实体" />
+  return (
+    <div className={css.chips} role="list">
+      {items.map((it, i) => {
+        if (typeof it === 'string') {
+          return <EntityNode key={i} node={{ type: 'entity', title: it }} onAction={onAction} />
+        }
+        const rec = it as Record<string, unknown>
+        if (rec.type === 'badge') {
+          return (
+            <span key={i} className={`${css.badge} ${css[String(rec.tone ?? '')] || ''}`}>
+              {renderInline(String(rec.label ?? ''), false)}
+            </span>
+          )
+        }
+        const entity: GenuiEntity = {
+          type: 'entity',
+          title: String(rec.title ?? rec.label ?? rec.name ?? '实体'),
+        }
+        if (typeof rec.subtitle === 'string') entity.subtitle = rec.subtitle
+        if (typeof rec.label === 'string' && rec.title !== undefined) entity.label = rec.label
+        if (typeof rec.tone === 'string') entity.tone = rec.tone as 'success' | 'warn' | 'danger' | 'accent' | 'muted'
+        if (typeof rec.icon === 'string') entity.icon = rec.icon
+        if (typeof rec.href === 'string') entity.href = rec.href
+        if (typeof rec.action === 'string') entity.action = rec.action
+        return <EntityNode key={i} node={entity} onAction={onAction} />
+      })}
+    </div>
+  )
+}
+
+/** Map / destination card — real OSM embed or Leaflet tiles + CTA links. */
+export function MapNode({ node }: {
+  node: GenuiMap
+}) {
+  const query = (node.query ?? node.address ?? node.title ?? '').trim()
+  const linksRaw = (node.links ?? []).filter((l) => typeof l?.href === 'string' && /^https?:\/\//i.test(l.href))
+  const links = (linksRaw.length > 0 ? linksRaw : buildDefaultMapLinks(query)).slice(0, 4)
+  const facts = (node.facts ?? []).slice(0, 8)
+  const needsGeocode = node.lat === undefined && node.lng === undefined
+    && ((node.query ?? node.address ?? node.title ?? '').trim() !== '')
+  const [geo, setGeo] = useState<{ lat: number; lng: number; label?: string } | null>(null)
+  const [geoStatus, setGeoStatus] = useState<'idle' | 'pending' | 'ok' | 'err'>(
+    needsGeocode ? 'pending' : 'idle',
+  )
+  useEffect(() => {
+    if (needsGeocode) setGeoStatus('pending')
+    else setGeoStatus('idle')
+    const onMsg = (ev: MessageEvent) => {
+      const data = ev.data
+      if (!data || typeof data !== 'object') return
+      const row = data as { type?: string; ok?: boolean; lat?: number; lng?: number; label?: string; reason?: string }
+      if (row.type !== 'iui-map-geocode') return
+      if (row.ok === true) {
+        if (typeof row.lat !== 'number' || typeof row.lng !== 'number') return
+        if (!Number.isFinite(row.lat) || !Number.isFinite(row.lng)) return
+        setGeo({
+          lat: row.lat,
+          lng: row.lng,
+          ...(typeof row.label === 'string' ? { label: row.label } : {}),
+        })
+        setGeoStatus('ok')
+        return
+      }
+      if (row.ok === false) setGeoStatus('err')
+    }
+    window.addEventListener('message', onMsg)
+    return () => window.removeEventListener('message', onMsg)
+  }, [node.query, node.lat, node.lng, node.title, node.address, needsGeocode])
+  const surface = resolveMapSurface({
+    ...(node.embed !== undefined ? { embed: node.embed } : {}),
+    ...(node.lat !== undefined ? { lat: node.lat } : {}),
+    ...(node.lng !== undefined ? { lng: node.lng } : {}),
+    ...(node.zoom !== undefined ? { zoom: node.zoom } : {}),
+    ...(node.provider !== undefined ? { provider: node.provider } : {}),
+    ...(node.query !== undefined ? { query: node.query } : {}),
+    ...(node.title !== undefined ? { title: node.title } : {}),
+    ...(node.address !== undefined ? { address: node.address } : {}),
+    ...(node.markers !== undefined ? { markers: node.markers } : {}),
+    ...(node.path !== undefined ? { path: node.path } : {}),
+    ...(node.route !== undefined ? { route: node.route } : {}),
+    safeEmbedUrl,
+  })
+  const embedH =
+    typeof node.height === 'number' && Number.isFinite(node.height)
+      ? Math.max(160, Math.min(640, Math.round(node.height)))
+      : undefined
+  const wrapStyle = embedH !== undefined ? { minHeight: embedH, height: embedH, aspectRatio: 'auto' as const } : undefined
+  const displayLat = node.lat ?? geo?.lat
+  const displayLng = node.lng ?? geo?.lng
+  if (!node.title && !node.address && links.length === 0 && surface.kind === 'none') {
+    return <EmptyState kind="map" detail="缺少地点信息" />
+  }
+  return (
+    <div className={css.mapCard} data-iui-map data-iui-map-mode={surface.kind === 'none' ? 'links-only' : surface.mode}>
+      <div className={css.mapHead}>
+        {node.label !== undefined && <span className={css.mapLabel}>{renderInline(node.label, false)}</span>}
+        {node.title !== undefined && <div className={css.mapTitle}>{renderInline(node.title)}</div>}
+        {node.address !== undefined && <div className={css.mapAddress}>{renderInline(node.address)}</div>}
+        {(displayLat !== undefined && displayLng !== undefined) && (
+          <div className={css.mapCoords} data-iui-map-coords>
+            {displayLat.toFixed(4)}, {displayLng.toFixed(4)}
+            {geo && node.lat === undefined ? <span className={css.mapCoordsHint}> · 已定位</span> : null}
+          </div>
+        )}
+      </div>
+      {surface.kind === 'iframe-src' && (
+        <div className={css.mapEmbedWrap} style={wrapStyle}>
+          <iframe
+            className={css.mapEmbed}
+            src={surface.src}
+            title={node.title ?? '地图'}
+            loading="lazy"
+            referrerPolicy="no-referrer-when-downgrade"
+            sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+          />
+        </div>
+      )}
+      {surface.kind === 'iframe-srcdoc' && (
+        <div className={css.mapEmbedWrap} style={wrapStyle}>
+          <iframe
+            className={css.mapEmbed}
+            srcDoc={surface.srcdoc}
+            title={node.title ?? '地图'}
+            loading="lazy"
+            referrerPolicy="no-referrer-when-downgrade"
+            sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"
+          />
+        </div>
+      )}
+      {geoStatus === 'pending' && surface.kind !== 'none' && (
+        <div className={css.mapStatus ?? undefined} data-iui-map-status="pending" role="status" style={css.mapStatus ? undefined : {
+          fontSize: 12, color: 'var(--dsl-g-muted, hsl(240 4% 46%))', padding: '2px 0',
+        }}>
+          正在定位…
+        </div>
+      )}
+      {geoStatus === 'err' && (
+        <div className={css.mapStatusErr ?? css.mapStatus ?? undefined} data-iui-map-status="err" role="status" style={css.mapStatusErr || css.mapStatus ? undefined : {
+          fontSize: 12, color: 'hsl(0 65% 40%)', padding: '2px 0',
+        }}>
+          未能自动定位，可用下方外链打开地图
+        </div>
+      )}
+      {facts.length > 0 && (
+        <ul className={css.mapFacts}>
+          {facts.map((f, i) => <li key={i}>{renderInline(f, false)}</li>)}
+        </ul>
+      )}
+      {links.length > 0 && (
+        <div className={css.mapLinks}>
+          {links.map((l, i) => (
+            <a key={i} className={css.link} href={l.href} target="_blank" rel="noopener noreferrer" data-iui-link="open">
+              <span className={css.linkLabel}>{renderInline(l.label, false)}</span>
+              <span className={css.linkHint} aria-hidden>↗</span>
+            </a>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}

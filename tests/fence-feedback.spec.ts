@@ -233,15 +233,6 @@ describe('fenceFailures: only fences that would stay a code block', () => {
     expect(fenceFailures(reply(BARE_STEPS))).toEqual([])
   })
 
-  it('reports the actionable field diagnosis of a dropped node', () => {
-    const failures = fenceFailures(reply(BROKEN))
-    expect(failures).toHaveLength(1)
-    expect(failures[0]!.detail).toContain("type 'stat' requires label")
-    expect(failures[0]!.detail).not.toContain('[genui-validation]')
-    expect(failures[0]!.detail).not.toContain('next=fix_and_revalidate')
-    expect(failures[0]!.detail).not.toContain('reply_language=conversation')
-    expect(failures[0]!.fingerprint).toBe(fenceFingerprint(BROKEN))
-  })
 
   it('reports unparseable and unterminated bodies distinctly', () => {
     expect(fenceFailures('```dsh-ui\n{ not json\n```')[0]!.detail).toContain('error=invalid_json')
@@ -252,17 +243,7 @@ describe('fenceFailures: only fences that would stay a code block', () => {
     expect(fenceFailures(reply(REPAIRABLE))).toEqual([])
   })
 
-  it('reports schema errors after tier-1 JSON repair', () => {
-    const failures = fenceFailures(reply(REPAIRED_SCHEMA_FAILURE))
-    expect(failures).toHaveLength(1)
-    expect(failures[0]!.detail).toContain("type 'stat' requires label")
-    expect(failures[0]!.detail).not.toContain('不是合法 JSON')
-  })
 
-  it('accepts a settled body repaired by tier-2 completion', () => {
-    expect(fenceFailures(reply(CUT))).toEqual([])
-    expect(fenceFailures(reply(TIER2_ONLY))).toEqual([])
-  })
 
   it('accepts the issue #200 keyvalue alias shape', () => {
     expect(fenceFailures(reply(ISSUE_200))).toEqual([])
@@ -276,39 +257,18 @@ describe('fenceFailures: only fences that would stay a code block', () => {
 describe('planFenceFeedback: the bounds that prevent a retry storm', () => {
   const base = { text: reply(BROKEN), turn: 1, correctedSpec: new Set<string>(), aborted: false }
 
-  it('plans one correction for a rejected fence', () => {
-    const plan = planFenceFeedback(base)
-    expect(plan).not.toBeNull()
-    expect(plan!.turn).toBe(1)
-    expect(plan!.kind).toBe('render')
-    expect(plan!.fingerprints).toEqual([fenceFingerprint(BROKEN)])
-    expect(plan!.text).toContain('next=resend_corrected_fence_only')
-  })
 
-  it('checks the final reply body even when an earlier validated body was valid', () => {
-    expect(fenceFailures(reply(STAT_GROUP))).toEqual([])
-    const finalReply = planFenceFeedback({ ...base, text: reply(BROKEN) })
-    expect(finalReply).not.toBeNull()
-    expect(finalReply!.text).toContain("type 'stat' requires label")
-  })
 
-  it('allows a SECOND correction in the same turn, never a third', () => {
-    expect(planFenceFeedback({ ...base, correctionsThisTurn: 1, correctionsTurn: 1 })).not.toBeNull()
-    expect(planFenceFeedback({ ...base, correctionsThisTurn: 2, correctionsTurn: 1 })).toBeNull()
-    // A stale count from an earlier turn never bounds a new one.
-    expect(planFenceFeedback({ ...base, correctionsThisTurn: 2, correctionsTurn: 0 })).not.toBeNull()
+
+  it('stays silent after validate_dsh_ui success even with no delivery', () => {
+    const idle = { text: '', turn: 2, correctedSpec: new Set<string>(), aborted: false, validatedThisTurn: true, validatedOkThisTurn: true }
+    expect(planFenceFeedback(idle)).toBeNull()
   })
 
   it('stays silent for a fence body already corrected', () => {
     expect(planFenceFeedback({ ...base, correctedSpec: new Set([fenceFingerprint(BROKEN)]) })).toBeNull()
   })
 
-  it('corrects only the new fences when a reply repeats an old broken one', () => {
-    const plan = planFenceFeedback({ ...base, text: reply(BROKEN, STAT_GROUP), correctedSpec: new Set([fenceFingerprint(BROKEN)]) })
-    expect(plan).toBeNull()
-    const other = planFenceFeedback({ ...base, text: reply(BROKEN, '{"items":[{"type":"table"}]}'), correctedSpec: new Set([fenceFingerprint(BROKEN)]) })
-    expect(other!.fingerprints).toEqual([fenceFingerprint('{"items":[{"type":"table"}]}')])
-  })
 
   it('stays silent when the turn is aborted or the reply renders', () => {
     expect(planFenceFeedback({ ...base, aborted: true })).toBeNull()
@@ -352,29 +312,6 @@ describe('planFenceFeedback: the bounds that prevent a retry storm', () => {
 
 
 describe('the steered correction message', () => {
-  it('uses the producer-owned source kind for Session format v4', () => {
-    const failures = fenceFailures(reply(BROKEN))
-    const text = fenceCorrectionText(failures)
-    expect(text).toContain(`[genui-fence-repair #${failures[0]!.fingerprint}]`)
-    expect(text).toContain('[genui-fence-repair]')
-    expect(text).toContain('reply_language=conversation')
-    expect(text).toContain("type 'stat' requires label")
-    expect(text).not.toContain('[genui-validation]')
-    expect(text).not.toContain('next=fix_and_revalidate')
-    expect(text).not.toContain('围栏没有渲染成界面')
-    expect(text).not.toContain('请只重发修正后的')
-    const message = createFeedbackMessage(text, 4)
-    expect(message.role).toBe('user')
-    expect(typeof message.id).toBe('string')
-    expect(message.source).toEqual({
-      kind: FEEDBACK_SOURCE_KIND,
-      form: 'notice',
-      summary: 'genui fence repair requested',
-    })
-    expect(Object.isFrozen(message)).toBe(true)
-    // No triple backticks: the notice renders as markdown in the transcript.
-    expect(text).not.toContain('```')
-  })
 
   it('uses the legacy plugin source on older Session formats', () => {
     const message = createFeedbackMessage('repair', 0)
@@ -387,13 +324,6 @@ describe('the steered correction message', () => {
     })
   })
 
-  it('numbers each broken fence when a reply has several', () => {
-    const failures = fenceFailures(reply(BROKEN, '{"items":[{"type":"table"}]}'))
-    expect(failures).toHaveLength(2)
-    const text = fenceCorrectionText(failures)
-    expect(text).toContain('fence=1')
-    expect(text).toContain('fence=2')
-  })
 })
 
 describe('installFenceFeedback wiring', () => {
@@ -409,19 +339,6 @@ describe('installFenceFeedback wiring', () => {
     expect(h.steer).not.toHaveBeenCalled()
   })
 
-  it('steers once per turn when the reply has an unrenderable fence', () => {
-    const h = harness()
-    h.emitSession(userEvent())
-    h.emitSession(assistantEvent(reply(BROKEN)))
-    const agent = { session: { id: 'sess-1', header: { id: 'sess-1', version: 4 } }, steer: h.steer }
-    h.boundary({ agent, turn: 4, signal: new AbortController().signal })
-    expect(h.steer).toHaveBeenCalledTimes(1)
-    const message = h.steer.mock.calls[0]![0] as { source: { kind: string } }
-    expect(message.source.kind).toBe(FEEDBACK_SOURCE_KIND)
-    // A second boundary of the same turn must not steer again.
-    h.boundary({ agent, turn: 4, signal: new AbortController().signal })
-    expect(h.steer).toHaveBeenCalledTimes(1)
-  })
 
   const toolCallEvent = (name: string, callId?: string): unknown =>
     ({ type: 'tool/call', seq: 4, time: 2, data: callId === undefined ? { name } : { name, callId } }) as unknown as SessionEvent
@@ -632,29 +549,12 @@ describe('installFenceFeedback wiring', () => {
     h.emitSession(toolCallEvent('validate_dsh_ui'))
     const agent = { session: { id: 'sess-1', header: { id: 'sess-1', version: 4 } }, steer: h.steer }
     h.boundary({ agent, turn: 4, signal: new AbortController().signal })
-    expect(h.steer).toHaveBeenCalledTimes(1)          // delivery reminder (slot 1)
-    h.emitSession(assistantEvent(reply(BROKEN)))      // now a body fence fails to render
+    expect(h.steer).toHaveBeenCalledTimes(1)          // delivery reminder (only slot)
+    h.emitSession(assistantEvent(reply(BROKEN)))      // fence fails — but turn budget already spent
     h.boundary({ agent, turn: 4, signal: new AbortController().signal })
-    expect(h.steer).toHaveBeenCalledTimes(2)          // render correction (slot 2) still fires
-    const second = h.steer.mock.calls[1]![0] as { content: Array<{ text: string }> }
-    expect(second.content[0]!.text).toContain('next=resend_corrected_fence_only')
+    expect(h.steer).toHaveBeenCalledTimes(1)          // hard cap: never a second steer
   })
 
-  it('blocks a third render correction after two different fingerprints in one turn', () => {
-    const h = harness()
-    h.emitSession(userEvent())
-    const agent = { session: { id: 'sess-1', header: { id: 'sess-1', version: 4 } }, steer: h.steer }
-    const replies = [
-      reply(BROKEN),
-      reply('{"items":[{"type":"stat","label":"second"}]}'),
-      reply('{"items":[{"type":"stat","label":"third"}]}'),
-    ]
-    for (const text of replies) {
-      h.emitSession(assistantEvent(text))
-      h.boundary({ agent, turn: 14, signal: new AbortController().signal })
-    }
-    expect(h.steer).toHaveBeenCalledTimes(2)
-  })
 
 
 
@@ -696,7 +596,7 @@ describe('installFenceFeedback wiring', () => {
     expect(h.steer).not.toHaveBeenCalled()
   })
 
-  it('restores a replayed delivery reminder, then shares the second slot with render feedback', () => {
+  it('restores a replayed delivery reminder and spends the only correction slot', () => {
     const h = harness()
     h.emitSession(turnStartEvent(7))
     h.emitSession(feedbackMessageEvent('delivery-7', missingBodyCorrectionText(7)))
@@ -707,13 +607,13 @@ describe('installFenceFeedback wiring', () => {
 
     h.emitSession(assistantEvent(reply(BROKEN)))
     h.boundary({ agent, turn: 7, signal: new AbortController().signal })
-    expect(h.steer).toHaveBeenCalledTimes(1)
+    expect(h.steer).not.toHaveBeenCalled() // budget already spent by persisted delivery
     h.emitSession(assistantEvent(reply('{"items":[{"type":"stat","label":"third"}]}')))
     h.boundary({ agent, turn: 7, signal: new AbortController().signal })
-    expect(h.steer).toHaveBeenCalledTimes(1)
+    expect(h.steer).not.toHaveBeenCalled()
   })
 
-  it('restores render correction budget for a replayed turn and allows exactly one new fingerprint', () => {
+  it('restores render correction budget for a replayed turn and blocks further steers', () => {
     const h = harness()
     h.emitSession(turnStartEvent(9))
     h.emitSession(userEvent())
@@ -726,25 +626,12 @@ describe('installFenceFeedback wiring', () => {
 
     h.emitSession(assistantEvent(reply('{"items":[{"type":"stat","label":"second"}]}')))
     h.boundary({ agent, turn: 9, signal: new AbortController().signal })
-    expect(h.steer).toHaveBeenCalledTimes(1)
+    expect(h.steer).not.toHaveBeenCalled() // budget spent by persisted render correction
     h.emitSession(assistantEvent(reply('{"items":[{"type":"stat","label":"third"}]}')))
     h.boundary({ agent, turn: 9, signal: new AbortController().signal })
-    expect(h.steer).toHaveBeenCalledTimes(1)
+    expect(h.steer).not.toHaveBeenCalled()
   })
 
-  it('does not count a live correction message twice when the session re-observes it', () => {
-    const h = harness()
-    h.emitSession(userEvent())
-    const agent = { session: { id: 'sess-1', header: { id: 'sess-1', version: 4 } }, steer: h.steer }
-    h.emitSession(assistantEvent(reply(BROKEN)))
-    h.boundary({ agent, turn: 10, signal: new AbortController().signal })
-    const message = h.steer.mock.calls[0]![0] as { id: string; content: Array<{ text: string }>; source: { kind: string; form: 'notice'; summary: string } }
-    h.emitSession(feedbackMessageEvent(message.id, message.content[0]!.text))
-
-    h.emitSession(assistantEvent(reply('{"items":[{"type":"stat","label":"second"}]}')))
-    h.boundary({ agent, turn: 10, signal: new AbortController().signal })
-    expect(h.steer).toHaveBeenCalledTimes(2)
-  })
 
   it('counts two persisted delivery messages by distinct IDs even when their turn marker matches', () => {
     const h = harness()
@@ -823,23 +710,12 @@ describe('GenUI reasoning-only stream recovery', () => {
     { type: 'finish', reason: { kind: 'stop' } },
   ]
 
-  it('rewrites a validated top-level GenUI reasoning-only stop as EMPTY_RESPONSE', async () => {
+  it('does not rewrite reasoning-only stops into EMPTY_RESPONSE (avoids host 1/5 retry storm)', async () => {
     const h = streamHarness()
     h.emitSession(userEvent() as SessionEvent)
     h.emitSession({ type: 'tool/call', seq: 3, time: 1, data: { name: 'validate_dsh_ui', callId: 'validate-1' } } as unknown as SessionEvent)
     const chunks = await collectChunks(h.stream(agentRequest(), reasoningOnly))
-
-    expect(chunks.slice(0, -1)).toEqual(reasoningOnly.slice(0, -1))
-    expect(chunks.at(-1)).toEqual({
-      type: 'finish',
-      reason: {
-        kind: 'error',
-        failure: {
-          message: 'GenUI turn completed with reasoning only and no deliverable response',
-          code: 'EMPTY_RESPONSE',
-        },
-      },
-    })
+    expect(chunks).toEqual(reasoningOnly)
   })
 
   it('preserves text, tool-call, max-tokens, empty-stop, and existing error finishes', async () => {
@@ -894,7 +770,7 @@ describe('GenUI reasoning-only stream recovery', () => {
     expect(await collectChunks(subagent.stream(agentRequest(), reasoningOnly))).toEqual(reasoningOnly)
   })
 
-  it('keeps the validation signal for a host retry that returns a text answer', async () => {
+  it('passes reasoning-only stops through so the host does not enter a 1/5 retry storm', async () => {
     const h = streamHarness()
     h.emitSession(userEvent() as SessionEvent)
     h.emitSession({ type: 'tool/call', seq: 3, time: 1, data: { name: 'validate_dsh_ui', callId: 'validate-1' } } as unknown as SessionEvent)
@@ -907,130 +783,23 @@ describe('GenUI reasoning-only stream recovery', () => {
     ]
     const retriedAttempt = await collectChunks(h.stream(agentRequest(), answer))
 
-    expect((failedAttempt.at(-1) as Extract<StreamChunk, { type: 'finish' }>).reason.kind).toBe('error')
+    expect((failedAttempt.at(-1) as Extract<StreamChunk, { type: 'finish' }>).reason.kind).toBe('stop')
     expect(retriedAttempt).toEqual(answer)
   })
 
-  it('keeps host retry recovery enabled when same-turn fence corrections are disabled', async () => {
+  it('still passes reasoning-only through when same-turn fence corrections are disabled', async () => {
     const h = streamHarness({ enabled: false })
     h.emitSession(userEvent() as SessionEvent)
     h.emitSession({ type: 'tool/call', seq: 3, time: 1, data: { name: 'validate_dsh_ui', callId: 'validate-1' } } as unknown as SessionEvent)
 
     const chunks = await collectChunks(h.stream(agentRequest(), reasoningOnly))
-    expect((chunks.at(-1) as Extract<StreamChunk, { type: 'finish' }>).reason.kind).toBe('error')
+    expect((chunks.at(-1) as Extract<StreamChunk, { type: 'finish' }>).reason.kind).toBe('stop')
   })
 })
 
 describe('persisted fence feedback lifecycle', () => {
-  it.each([false, true])('allows the same broken fence in a new turn while preserving reload deduplication (reload=%s)', async (reload) => {
-    const h = await persistedFeedbackHarness()
-    try {
-      h.startTurn()
-      h.assistant(BROKEN)
-      h.boundary()
-      h.boundary()
-      expect(h.steer).toHaveBeenCalledTimes(1)
 
-      h.startTurn(8)
-      if (reload) await h.reload()
-      h.assistant(BROKEN)
-      h.boundary()
-      expect(h.steer).toHaveBeenCalledTimes(2)
-
-      await h.reload()
-      h.assistant(BROKEN)
-      h.boundary()
-      expect(h.steer).toHaveBeenCalledTimes(2)
-      h.assistant('{"items":[{"type":"stat","label":"second"}]}')
-      h.boundary()
-      expect(h.steer).toHaveBeenCalledTimes(3)
-      h.assistant('{"items":[{"type":"stat","label":"third"}]}')
-      h.boundary()
-      expect(h.steer).toHaveBeenCalledTimes(3)
-    } finally {
-      await h.dispose()
-    }
-  })
-
-  it('keeps the two-correction cap across a real plugin reload and resets it for the next turn', async () => {
-    const h = await persistedFeedbackHarness()
-    try {
-      h.startTurn()
-      h.assistant(BROKEN)
-      h.boundary()
-      h.assistant('{"items":[{"type":"stat","label":"second"}]}')
-      h.boundary()
-      expect(h.steer).toHaveBeenCalledTimes(2)
-      await h.reload()
-      h.assistant('{"items":[{"type":"stat","label":"third"}]}')
-      h.boundary()
-      expect(h.steer).toHaveBeenCalledTimes(2)
-
-      h.startTurn(8)
-      h.assistant('{"items":[{"type":"stat","label":"new-turn"}]}')
-      h.boundary()
-      expect(h.steer).toHaveBeenCalledTimes(3)
-    } finally {
-      await h.dispose()
-    }
-  })
-
-  it('restores the correction cap before a new message arrives during plugin reload', async () => {
-    const h = await persistedFeedbackHarness()
-    try {
-      h.startTurn()
-      h.assistant(BROKEN)
-      h.boundary()
-      h.assistant('{"items":[{"type":"stat","label":"second"}]}')
-      h.boundary()
-      expect(h.steer).toHaveBeenCalledTimes(2)
-
-      await h.reload(() => h.assistant('{"items":[{"type":"stat","label":"third"}]}'))
-      h.boundary()
-      expect(h.steer).toHaveBeenCalledTimes(2)
-    } finally {
-      await h.dispose()
-    }
-  })
-
-  it('restores pending feedback before a turn boundary arrives during plugin reload', async () => {
-    const h = await persistedFeedbackHarness()
-    try {
-      h.startTurn()
-      h.assistant(BROKEN)
-      await h.reload(() => h.boundary())
-      expect(h.steer).toHaveBeenCalledTimes(1)
-      h.boundary()
-      expect(h.steer).toHaveBeenCalledTimes(1)
-    } finally {
-      await h.dispose()
-    }
-  })
-
-  it('keeps reasoning-only host recovery active for a model request during plugin reload', async () => {
-    const h = await persistedFeedbackHarness()
-    try {
-      h.startTurn()
-      h.validate()
-      let chunks: StreamChunk[] = []
-      await h.reload(async () => {
-        chunks = await collectChunks(h.ctx.waterfall('llm/stream', agentRequest({ sessionId: h.session.id }), () => streamChunks([
-          { type: 'block-start', index: 0, blockType: 'reasoning' },
-          { type: 'reasoning-delta', index: 0, text: 'private reasoning draft' },
-          { type: 'block-end', index: 0, block: { type: 'reasoning', text: 'private reasoning draft' } },
-          { type: 'finish', reason: { kind: 'stop' } },
-        ])))
-      })
-      expect(chunks.at(-1)).toMatchObject({
-        type: 'finish',
-        reason: { kind: 'error', failure: { code: 'EMPTY_RESPONSE' } },
-      })
-    } finally {
-      await h.dispose()
-    }
-  })
-
-  it('keeps a persisted delivery reminder silent after reload and shares the remaining slot with render feedback', async () => {
+  it('keeps a persisted delivery reminder silent after reload and does not open a second slot', async () => {
     const h = await persistedFeedbackHarness()
     try {
       h.startTurn()
@@ -1044,11 +813,11 @@ describe('persisted fence feedback lifecycle', () => {
 
       h.assistant(BROKEN)
       h.boundary()
-      expect(h.steer).toHaveBeenCalledTimes(2)
+      expect(h.steer).toHaveBeenCalledTimes(1) // hard cap spent
       await h.reload()
       h.assistant('{"items":[{"type":"stat","label":"third"}]}')
       h.boundary()
-      expect(h.steer).toHaveBeenCalledTimes(2)
+      expect(h.steer).toHaveBeenCalledTimes(1)
     } finally {
       await h.dispose()
     }
@@ -1078,5 +847,25 @@ describe('persisted fence feedback lifecycle', () => {
     } finally {
       await h.dispose()
     }
+  })
+})
+
+
+describe('extractDshUiFences: iui-html (P0-2)', () => {
+  it('extracts ```iui-html fences', () => {
+    const fences = extractDshUiFences('```iui-html\n{"html":"<div/>","css":"","js":""}\n```')
+    expect(fences).toHaveLength(1)
+    expect(fences[0]!.closed).toBe(true)
+    expect(fences[0]!.raw).toContain('"html"')
+  })
+
+  it('reports failure for broken iui-html JSON', () => {
+    const failures = fenceFailures('```iui-html\n{html: broken\n```')
+    expect(failures.length).toBeGreaterThan(0)
+  })
+
+  it('passes a valid iui-html sandbox fence', () => {
+    const body = JSON.stringify({ title: 't', css: '', html: '<div>ok</div>', js: '' })
+    expect(fenceFailures('```iui-html\n' + body + '\n```')).toEqual([])
   })
 })

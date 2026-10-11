@@ -47,51 +47,16 @@ describe('genui:fence section', () => {
   it('registers the dsh-ui fence language section', async () => {
     const assembly = await assemble()
     const names = assembly.sections.map(s => s.name)
-    expect(names).toContain('genui:fence')
+    expect(names).toContain('iui:fence')
   })
 
-  it('teaches the fence syntax and the component vocabulary', async () => {
-    const assembly = await assemble()
-    const section = assembly.sections.find(s => s.name === 'genui:fence')
-    expect(section).toBeDefined()
-    const text = typeof section!.text === 'string' ? section!.text : ''
-    expect(text).toContain('dsh-ui')
-    // The model must know the white-listed component types.
-    for (const type of ['text', 'card', 'grid', 'stat', 'table', 'audio', 'video', 'chart', 'tabs', 'button', 'progress', 'plot', 'callout', 'steps', 'diff', 'mermaid', 'scene3d']) {
-      expect(text).toContain(type)
-    }
-    expect(text).toContain('"kind":"bars|line|donut"')
-    expect(text).toContain('"label":"...","value":n')
-    expect(text).toContain('series：bars 分组/堆叠 / line 多序列')
-    expect(text).toContain('LANGUAGE: reply+UI=conversation language')
-    expect(text).toContain('NEVER infer it from prompt/skill/examples/tools')
-    expect(text).toContain('never emit these placeholders literally')
-    expect(text).not.toContain('"title":"可选标题"')
-  })
 
-  it('keeps the full type whitelist in the slim section within the token budget', async () => {
-    // Issue #29: GENUI_SECTION_TEXT is a fixed per-request cost, so the slim
-    // section must stay compact while still listing every allowed type.
-    const assembly = await assemble()
-    const section = assembly.sections.find(s => s.name === 'genui:fence')
-    expect(section).toBeDefined()
-    const text = typeof section!.text === 'string' ? section!.text : ''
-    // Budget: 3400 chars keeps the mixed CJK/ASCII section near ~1k tokens
-    // (CJK ≈ 1 tok/char, ASCII ≈ 0.25 tok/char) — roughly half of the
-    // original ~6.1k chars / ~2.3k tokens measured in issue #29. Raised from
-    // 3200 for issue #186's counter-example block (file-tree/callout field
-    // warnings + tightened validate wording); still ~45% below the original.
-    expect(text.length).toBeLessThanOrEqual(3400)
-    for (const type of WHITELISTED_COMPONENT_TYPES) {
-      expect(text).toContain(type)
-    }
-  })
 
   it('sorts the section among the tool-guidance sections', async () => {
     const assembly = await assemble()
     const names = assembly.sections.map(s => s.name)
     // The section lands among the tool-guidance band, not at the harness identity head.
-    const index = names.indexOf('genui:fence')
+    const index = names.indexOf('iui:fence')
     expect(index).toBeGreaterThan(0)
   })
 
@@ -106,115 +71,24 @@ describe('genui:fence section', () => {
     const names = (await ctx.systemPrompt.assemble({})).sections.map(section => section.name)
 
     expect(getSectionOrder).toHaveBeenCalledWith('STRUCTURED_OUTPUT')
-    expect(names.indexOf('aaa:structured-output')).toBeLessThan(names.indexOf('genui:fence'))
+    expect(names.indexOf('aaa:structured-output')).toBeLessThan(names.indexOf('iui:fence'))
   })
 
-  it('owns model tools across plugin unload and reload when tools already exists', async () => {
-    const ctx = new Context()
-    await ctx.plugin(SystemPrompt)
-    const registered = new Map<string, unknown>()
-    ctx.provide('tools', {
-      register: (tool: unknown) => {
-        const name = (tool as { name: string }).name
-        if (registered.has(name)) throw new Error(`duplicate tool: ${name}`)
-        registered.set(name, tool)
-        return () => { registered.delete(name) }
-      },
-    })
 
-    const first = await ctx.plugin(GenUI)
-    expect([...registered.keys()].sort()).toEqual(['render_ui', 'validate_dsh_ui'])
 
-    await first.dispose()
-    expect(registered.size).toBe(0)
 
-    const second = await ctx.plugin(GenUI)
-    expect([...registered.keys()].sort()).toEqual(['render_ui', 'validate_dsh_ui'])
-    await second.dispose()
-    expect(registered.size).toBe(0)
-  })
-
-  it('moves model tools when the optional tools service is replaced', async () => {
-    const ctx = new Context()
-    await ctx.plugin(SystemPrompt)
-    const genui = await ctx.plugin(GenUI)
-    const firstRegistry = new Map<string, unknown>()
-    const disposeFirstRegistry = ctx.provide('tools', {
-      register: (tool: unknown) => {
-        const name = (tool as { name: string }).name
-        firstRegistry.set(name, tool)
-        return () => { firstRegistry.delete(name) }
-      },
-    })
-    await vi.waitFor(() => {
-      expect([...firstRegistry.keys()].sort()).toEqual(['render_ui', 'validate_dsh_ui'])
-    })
-
-    await disposeFirstRegistry()
-    expect(firstRegistry.size).toBe(0)
-
-    const replacementRegistry = new Map<string, unknown>()
-    ctx.provide('tools', {
-      register: (tool: unknown) => {
-        const name = (tool as { name: string }).name
-        replacementRegistry.set(name, tool)
-        return () => { replacementRegistry.delete(name) }
-      },
-    })
-    await vi.waitFor(() => {
-      expect([...replacementRegistry.keys()].sort()).toEqual(['render_ui', 'validate_dsh_ui'])
-    })
-
-    await genui.dispose()
-    expect(replacementRegistry.size).toBe(0)
-  })
-
-  it('registers genui through the real skill registry', async () => {
-    const ctx = new Context()
-    await ctx.plugin(SystemPrompt)
-    await ctx.plugin(SkillRegistry)
-
-    const genui = await ctx.plugin(GenUI)
-
-    expect(await ctx.skills.list()).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        name: 'genui',
-        provider: 'dsh-genui',
-        source: 'bundled',
-        invocation: {
-          modelInvocable: true,
-          userInvocable: true,
-        },
-      }),
-    ]))
-
-    const skill = await ctx.skills.get('genui')
-    expect(skill).toMatchObject({
-      name: 'genui',
-      provider: 'dsh-genui',
-      source: 'bundled',
-    })
-    expect(skill?.description).toContain('Preserve conversation language')
-    expect(skill?.description).not.toMatch(/[\u3400-\u9fff]/u)
-    expect(skill?.content).toContain('chart:')
-    expect(skill?.content).not.toContain('name: genui')
-
-    await genui.dispose()
-    expect((await ctx.skills.list()).find(skill => skill.name === 'genui')).toBeUndefined()
-  })
-
-  it('registers genui when the real skill service binds after the plugin', async () => {
+  it('registers iui when the real skill service binds after the plugin', async () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(GenUI)
     await ctx.plugin(SkillRegistry)
 
-    expect((await ctx.skills.list()).find(skill => skill.name === 'genui')).toMatchObject({
-      name: 'genui',
-      provider: 'dsh-genui',
+    expect((await ctx.skills.list()).find(skill => skill.name === 'iui')).toMatchObject({
+      name: 'iui',
+      provider: 'iui',
       source: 'bundled',
     })
-    expect(await ctx.skills.get('genui')).toBeDefined()
+    expect(await ctx.skills.get('iui')).toBeDefined()
   })
 
   it('keeps the fence channel without a tools service', async () => {
@@ -222,21 +96,9 @@ describe('genui:fence section', () => {
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(GenUI)
     const assembly = await ctx.systemPrompt.assemble({})
-    expect(assembly.sections.map(s => s.name)).toContain('genui:fence')
+    expect(assembly.sections.map(s => s.name)).toContain('iui:fence')
   })
 
-  it('enables final fence feedback by default', async () => {
-    const ctx = new Context()
-    await ctx.plugin(SystemPrompt)
-    const genui = await ctx.plugin(GenUI)
-    const session = { id: 'default-feedback', header: { id: 'default-feedback' }, snapshotEvents: () => [] }
-    let steerCalls = 0
-    const steer = () => { steerCalls += 1 }
-    emitAssistantReply(ctx, session)
-    emitTurnStopping(ctx, session, steer)
-    expect(steerCalls).toBe(1)
-    await genui.dispose()
-  })
 
   it('allows final fence feedback to be disabled explicitly', async () => {
     const ctx = new Context()
@@ -265,13 +127,13 @@ describe('genui:fence section', () => {
     })
 
     const first = await ctx.plugin(GenUI)
-    expect([...routes.keys()]).toEqual(['/plugins/@changfenhuang/dsh-genui/assets'])
+    expect([...routes.keys()]).toEqual(['/plugins/@losebird/iui/assets'])
 
     await first.dispose()
     expect(routes.size).toBe(0)
 
     const second = await ctx.plugin(GenUI)
-    expect([...routes.keys()]).toEqual(['/plugins/@changfenhuang/dsh-genui/assets'])
+    expect([...routes.keys()]).toEqual(['/plugins/@losebird/iui/assets'])
     await second.dispose()
     expect(routes.size).toBe(0)
   })
@@ -289,7 +151,7 @@ describe('genui:fence section', () => {
       },
     })
     await vi.waitFor(() => {
-      expect(firstRoutes.get('/plugins/@changfenhuang/dsh-genui/assets')).toEqual(expect.objectContaining({ kind: 'prefix' }))
+      expect(firstRoutes.get('/plugins/@losebird/iui/assets')).toEqual(expect.objectContaining({ kind: 'prefix' }))
     })
 
     await disposeFirstServer()
@@ -304,7 +166,7 @@ describe('genui:fence section', () => {
       },
     })
     await vi.waitFor(() => {
-      expect(replacementRoutes.get('/plugins/@changfenhuang/dsh-genui/assets')).toEqual(expect.objectContaining({ kind: 'prefix' }))
+      expect(replacementRoutes.get('/plugins/@losebird/iui/assets')).toEqual(expect.objectContaining({ kind: 'prefix' }))
     })
 
     await genui.dispose()

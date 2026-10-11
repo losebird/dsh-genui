@@ -1,7 +1,5 @@
 // @vitest-environment jsdom
-// The render_ui tool's keyed toolview: reads the repaired spec from the
-// result node's meta and renders through GenuiBlock; falls back to a summary
-// row while the call runs or when meta is missing (replay of old logs).
+// render_ui toolview — catalog GenuiBlock removed (P1-DEAD-SURFACE); shows sandbox tip.
 import { cleanup, render } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { ToolCallBlock } from '@deepseek-ai/dsh-client-ui-chat/client'
@@ -35,22 +33,21 @@ const resultBlock = (meta: unknown): ToolCallBlock => ({
 } as unknown as ToolCallBlock)
 
 describe('GenuiToolView', () => {
-  it('renders the spec from result meta', () => {
+  it('shows sandbox-first tip instead of catalog GenuiBlock', () => {
     render(<GenuiToolView {...props(resultBlock({ title: '监控面板', items: [
       { type: 'stat', label: 'CPU', value: '42%' },
-      { type: 'progress', value: 72 },
     ] }))} />)
-    const block = document.querySelector('[data-genui]')
-    expect(block).not.toBeNull()
-    expect(block!.textContent).toContain('监控面板')
-    expect(document.body.textContent).toContain('CPU')
-    expect(document.body.textContent).toContain('42%')
+    expect(document.querySelector('[data-genui]')).toBeNull()
+    const tip = document.querySelector('[data-iui-legacy-catalog="1"]')
+    expect(tip).not.toBeNull()
+    expect(document.body.textContent).toMatch(/iui-html/)
+    expect(document.body.textContent).toContain('call-1')
   })
 
-  it('repairs a hostile meta spec before rendering (caps honored)', () => {
+  it('still tips for hostile meta (no catalog render)', () => {
     render(<GenuiToolView {...props(resultBlock({ items: Array.from({ length: 500 }, (_, i) => ({ type: 'text', content: `t${i}` })) }))} />)
-    expect(document.body.textContent).toContain('t0')
-    expect(document.body.textContent).not.toContain('t499')
+    expect(document.querySelector('[data-genui]')).toBeNull()
+    expect(document.body.textContent).toMatch(/目录组件工具卡已移除|iui-html/)
   })
 
   it('falls back to a summary row while the call is running (no meta)', () => {

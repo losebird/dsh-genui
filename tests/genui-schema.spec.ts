@@ -323,8 +323,7 @@ describe('GenUI runtime schema normalization', () => {
   })
 
   it('shares complete chart renderability errors between process and chart-contract', () => {
-    // A line chart may carry its points in `series` (v3), so the remaining
-    // renderability error is the empty series itself.
+    // Empty series points are allowed (EmptyState). Donut+series still errors.
     const raw = { items: [{
       type: 'chart',
       kind: 'line',
@@ -332,10 +331,8 @@ describe('GenUI runtime schema normalization', () => {
     }] }
     const processed = processGenuiSpec(raw)
     const shared = validateRenderableChartSemantics(processed.normalized)
-    expect(shared).toEqual(expect.arrayContaining([
-      'items[0].series[0].data must not be empty',
-    ]))
-    expect(processed.errors).toEqual(expect.arrayContaining(shared))
+    expect(shared).toEqual([])
+    expect(processed.errors).toEqual([])
 
     // The donut stays single-series and still needs `data`.
     const donut = { items: [{ type: 'chart', kind: 'donut', series: [{ label: 'A', data: [{ label: 'X', value: 1 }] }] }] }

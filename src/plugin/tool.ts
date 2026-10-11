@@ -256,11 +256,10 @@ export function createRenderUiTool(): ToolDefinition {
  * "verify before you send". Purely local: no LLM, no network, no DOM.
  */
 const VALIDATE_DESCRIPTION =
-  'Validate the JSON body of a ```dsh-ui fence BEFORE emitting it — use for non-trivial specs (≥3 nodes or containing a table); skip for trivial ones (≤2 nodes). '
-  + 'Pass the exact JSON text you are about to put inside the fence as the "spec" argument (a string). '
-  + 'Returns a [genui-validation] protocol block with status, diagnostics, next action, and reply_language=conversation. '
-  + 'When invalid JSON is repairable, repaired_json contains the fixed body; emit it only with next=emit_repaired_fence. '
-  + 'A warning=block_markdown requires the indicated replacement node and another validation call.'
+  'Optional pre-flight for a ```iui / ```dsh-ui fence body. Prefer emitting the fence directly. '
+  + 'Call at most ONCE per turn, and only for large specs (≥5 nodes with a table) when unsure. '
+  + 'Pass the exact JSON text as "spec". On next=emit_fence or next=emit_repaired_fence, emit the fence immediately and STOP — do not re-validate, do not re-run bash for the same metrics. '
+  + 'Skip for ordinary dashboards; the renderer repairs most punctuation errors.'
 
 const VALIDATE_PARAMETERS: Record<string, unknown> = {
   type: 'object',

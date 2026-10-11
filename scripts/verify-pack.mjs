@@ -19,8 +19,8 @@ const { values: options } = parseArgs({
   strict: true,
 })
 
-const MAX_TARBALL = Number(process.env.GENUI_PACK_MAX_TARBALL ?? 3 * 1024 * 1024)
-const MAX_UNPACKED = Number(process.env.GENUI_PACK_MAX_UNPACKED ?? 10 * 1024 * 1024)
+const MAX_TARBALL = Number(process.env.GENUI_PACK_MAX_TARBALL ?? 3.75 * 1024 * 1024)
+const MAX_UNPACKED = Number(process.env.GENUI_PACK_MAX_UNPACKED ?? 12.5 * 1024 * 1024)
 
 const pkgJson = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
 

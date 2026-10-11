@@ -1,52 +1,118 @@
 /**
- * GenUI plugin: teaches the model the ```dsh-ui fence syntax for emitting
- * declarative UI components inline in its reply. The browser half renders the
- * fence through GenuiBlock (ui-primitives); this host half only tells the
- * model the language exists, so a session without the plugin simply never
- * emits fences and nothing changes.
- *
- * The section uses the host's centrally allocated structured-output placement.
- * @module @changfenhuang/dsh-genui
+ * IUI plugin — sandbox-first: teach ```iui-html (free HTML/CSS/JS pages).
+ * Catalog packs / DIL / Gateway deleted in 0.13.0-iui.0.
  */
-
 import { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-tools'
 import type { SkillProvider } from '@deepseek-ai/dsh-skill'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { readFileSync } from 'node:fs'
+import { writeFileSync, readFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { createRenderUiTool, createValidateDshUiTool } from './tool.ts'
+import { getLatestSnapshot, getSessionSnapshot, subscribeSessionBindings } from './binding-bridge.ts'
 import { installFenceFeedback } from './fence-feedback.ts'
+import type { IuiPluginConfig } from '../config/types.ts'
+import { DEFAULT_THEME_ID } from '../config/defaults.ts'
+import { resolveThemeId } from '../config/resolve.ts'
+import { listThemePacks } from '../themes/index.ts'
+import { Config, resolveLiveConfig, type IuiConfigResolved } from './config-schema.ts'
+import { GENUI_SECTION_TEXT } from './section-text.ts'
+import { formatRouterStatus } from './format-router.ts'
+import {
+  buildIuiResponseFormat,
+  probeStructuredOutputSupport,
+  resolveStructuredOutputsStatus,
+  structuredOutputsRuntimePayload,
+  type StructuredOutputsMode,
+} from '../shared/structured-outputs.ts'
+import { getFenceOpsSnapshot } from '../shared/fence-ops.ts'
+import { createGetTripStopImagesTool, createGetPlaceImagesTool } from './trip-images-tool.ts'
+export { GENUI_SECTION_TEXT } from './section-text.ts'
+export { Config }
 
-/* ---------------- lazy engine asset route ---------------- */
+const ASSET_ROUTE_PATH = '/plugins/@losebird/iui/assets'
 
-/**
- * The mermaid/three engines ship as standalone IIFE bundles under
- * `lib/assets/` and are fetched by the client ONLY when a spec needs them.
- * This route serves them from the plugin's own package directory through the
- * host webserver service — the longest-prefix rule lets it win over the
- * generic `/plugins` bundle route, and no host source change is needed. The
- * service is optional at this plugin's start time, so a dependency fiber owns
- * the registration and follows the webserver through late binding, replacement,
- * and plugin reloads.
- */
+type RuntimeConfigPayload = Omit<
+  IuiConfigResolved,
+  'jevApiKey' | 'structuredOutputsProbeKey'
+> & {
+  themes: Array<{ id: string; label: string; description?: string }>
+  packs: Array<{ id: string; label: string }>
+  formatRouter?: ReturnType<typeof formatRouterStatus>
+  structuredOutputs?: ReturnType<typeof resolveStructuredOutputsStatus>
+  responseFormat?: ReturnType<typeof buildIuiResponseFormat> | null
+  jevKeyConfigured?: boolean
+  structuredOutputsProbeKeyConfigured?: boolean
+  productPath: 'sandbox-html'
+}
 
-/** Route prefix under /plugins; anything under it is this plugin's asset. */
-const ASSET_ROUTE_PATH = '/plugins/@changfenhuang/dsh-genui/assets'
+function buildRuntimeConfig(live: IuiConfigResolved): RuntimeConfigPayload {
+  const {
+    jevApiKey: _jevKey,
+    structuredOutputsProbeKey: _probeKey,
+    ...publicLive
+  } = live
+  const soMode = live.structuredOutputsMode as StructuredOutputsMode
+  const soStatus = resolveStructuredOutputsStatus({ mode: soMode })
+  const soPayload = structuredOutputsRuntimePayload(soStatus)
+  return {
+    ...publicLive,
+    themeId: resolveThemeId(live.themeId),
+    themes: listThemePacks().map((t) => ({
+      id: t.id,
+      label: t.label,
+      ...(t.description ? { description: t.description } : {}),
+    })),
+    packs: [{ id: 'sandbox', label: 'Sandbox HTML' }],
+    formatRouter: formatRouterStatus({
+      jevEnabled: live.jevEnabled,
+      jevApiKey: live.jevApiKey,
+      ...(live.jevBaseUrl.trim() ? { jevBaseUrl: live.jevBaseUrl.trim() } : {}),
+      ...(live.jevModel.trim() ? { jevModel: live.jevModel.trim() } : {}),
+    }),
+    structuredOutputs: soPayload.structuredOutputs,
+    responseFormat: soPayload.responseFormat,
+    jevKeyConfigured: live.jevApiKey.trim().length > 0,
+    structuredOutputsProbeKeyConfigured: live.structuredOutputsProbeKey.trim().length > 0,
+    productPath: 'sandbox-html',
+  }
+}
 
-/** Safe flat file names only: no slashes, no traversal, js assets only. */
+let runtimeConfig: RuntimeConfigPayload = buildRuntimeConfig({
+  themeId: DEFAULT_THEME_ID,
+  fenceFeedback: true,
+  formatReferee: true,
+  customTokensJson: '',
+  userTemplatesJson: '',
+  jevEnabled: false,
+  jevApiKey: '',
+  jevBaseUrl: '',
+  jevModel: 'jev-latest',
+  structuredOutputsMode: 'auto',
+  structuredOutputsProbeUrl: '',
+  structuredOutputsProbeKey: '',
+})
+
+function publishRuntimeConfig(live: IuiConfigResolved): void {
+  runtimeConfig = buildRuntimeConfig(live)
+  const probeUrl = live.structuredOutputsProbeUrl.trim()
+  if (live.structuredOutputsMode !== 'off' && probeUrl.length > 0) {
+    void probeStructuredOutputSupport({
+      baseUrl: probeUrl,
+      ...(live.structuredOutputsProbeKey.trim()
+        ? { apiKey: live.structuredOutputsProbeKey.trim() }
+        : {}),
+    }).then(() => {
+      runtimeConfig = buildRuntimeConfig(live)
+    }).catch(() => { /* soft */ })
+  }
+}
+
 const ASSET_FILE_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*\.js$/
 
-/** The handler itself (registered via the optional webServer probe). */
 async function serveGenuiAsset(req: IncomingMessage, res: ServerResponse): Promise<void> {
-  if (req.method !== 'GET' && req.method !== 'HEAD') {
-    res.writeHead(405)
-    res.end()
-    return
-  }
   let pathname: string
   try {
     pathname = decodeURIComponent(new URL(req.url ?? '/', 'http://x').pathname)
@@ -62,13 +128,139 @@ async function serveGenuiAsset(req: IncomingMessage, res: ServerResponse): Promi
     return
   }
   const file = rel.slice(1)
+
+  if (file === 'response-format.json') {
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      res.writeHead(405, { allow: 'GET, HEAD' })
+      res.end()
+      return
+    }
+    const body = JSON.stringify(buildIuiResponseFormat(), null, 2)
+    res.writeHead(200, {
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': 'no-store',
+    })
+    if (req.method !== 'HEAD') res.write(body)
+    res.end()
+    return
+  }
+
+  if (file === 'format-router.json') {
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      res.writeHead(405, { allow: 'GET, HEAD' })
+      res.end()
+      return
+    }
+    const body = JSON.stringify({
+      formatRouter: runtimeConfig.formatRouter,
+      jevKeyConfigured: runtimeConfig.jevKeyConfigured === true,
+      structuredOutputs: runtimeConfig.structuredOutputs,
+      defaultPath: 'dsh→FreeLLMAPI→iui-html sandbox',
+      productPath: 'sandbox-html',
+    }, null, 2)
+    res.writeHead(200, {
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': 'no-store',
+    })
+    if (req.method !== 'HEAD') res.write(body)
+    res.end()
+    return
+  }
+
+  if (file === 'fence-ops.json') {
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      res.writeHead(405, { allow: 'GET, HEAD' })
+      res.end()
+      return
+    }
+    const out = Buffer.from(JSON.stringify({
+      ok: true,
+      plugin: '@losebird/iui',
+      fenceOps: getFenceOpsSnapshot(),
+      productPath: 'sandbox-html',
+    }), 'utf8')
+    res.writeHead(200, {
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': 'no-cache',
+    })
+    if (req.method !== 'HEAD') res.end(out)
+    else res.end()
+    return
+  }
+
+  if (file === 'runtime-config.json') {
+    const body = Buffer.from(JSON.stringify(runtimeConfig), 'utf8')
+    res.writeHead(200, {
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': 'no-cache',
+    })
+    if (req.method !== 'HEAD') res.end(body)
+    else res.end()
+    return
+  }
+
+  if (file === 'bindings.json') {
+    let sessionId = ''
+    try {
+      const u = new URL(req.url ?? '/', 'http://x')
+      sessionId = u.searchParams.get('session') ?? ''
+    } catch { /* ignore */ }
+    const snap = sessionId !== '' ? getSessionSnapshot(sessionId) : getLatestSnapshot()
+    const body = Buffer.from(JSON.stringify({ bindings: snap.bindings, appData: snap.appData, sessionId }), 'utf8')
+    res.writeHead(200, {
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': 'no-cache',
+    })
+    if (req.method !== 'HEAD') res.end(body)
+    else res.end()
+    return
+  }
+
+  if (file === 'bindings.sse') {
+    let sessionId = ''
+    try {
+      const u = new URL(req.url ?? '/', 'http://x')
+      sessionId = u.searchParams.get('session') ?? ''
+    } catch { /* ignore */ }
+    res.writeHead(200, {
+      'content-type': 'text/event-stream; charset=utf-8',
+      'cache-control': 'no-cache, no-transform',
+      connection: 'keep-alive',
+    })
+    const send = (
+      sid: string,
+      map: Record<string, string | number>,
+      meta?: { appData?: Record<string, unknown> },
+    ): void => {
+      if (sessionId !== '' && sid !== sessionId) return
+      const payload = JSON.stringify({
+        bindings: map,
+        appData: meta?.appData ?? {},
+        sessionId: sid,
+      })
+      res.write(`data: ${payload}\n\n`)
+    }
+    const initial = sessionId !== '' ? getSessionSnapshot(sessionId) : getLatestSnapshot()
+    send(sessionId, initial.bindings, { appData: initial.appData })
+    const unsub = subscribeSessionBindings((sid, map, meta) => send(sid, map, meta))
+    const heartbeat = setInterval(() => {
+      try { res.write(': ping\n\n') } catch { /* closed */ }
+    }, 15000)
+    const cleanup = (): void => {
+      clearInterval(heartbeat)
+      unsub()
+    }
+    req.on('close', cleanup)
+    req.on('error', cleanup)
+    return
+  }
+
   if (!ASSET_FILE_RE.test(file)) {
     res.writeHead(404)
     res.end()
     return
   }
   try {
-    // lib/index.js → ./assets/ = <pkg>/lib/assets/ (the tsdown asset outDir).
     const dir = fileURLToPath(new URL('./assets/', import.meta.url))
     const body = await readFile(join(dir, file))
     res.writeHead(200, {
@@ -77,73 +269,32 @@ async function serveGenuiAsset(req: IncomingMessage, res: ServerResponse): Promi
     })
     res.end(body)
   } catch {
-    // Missing asset (old build) — a loud 404; the client shows its fallback.
     res.writeHead(404)
     res.end()
   }
 }
 
-/** The fence language description injected into every assembled system prompt.
- *  Deliberately slim: the `genui` skill carries the full component→field
- *  mapping; this section keeps only the contract that must always be
- *  present (fence syntax, type whitelist, and critical behavioral rules). */
-export const GENUI_SECTION_TEXT = `You can render interactive UI components INSIDE your reply — between paragraphs — by emitting a fenced block with the language tag \`dsh-ui\` containing a JSON spec:
+function isHtmlPageWrite(args: unknown): boolean {
+  if (args === null || typeof args !== 'object') return false
+  const record = args as Record<string, unknown>
+  const hasContent = ['content', 'contents', 'text', 'new_string', 'newText', 'edits', 'patch'].some((key) => key in record)
+  if (!hasContent) return false
+  for (const key of ['path', 'file_path', 'filePath', 'file', 'filename', 'target']) {
+    const value = record[key]
+    if (typeof value === 'string' && /\.(?:html?|xhtml)$/iu.test(value.trim())) return true
+  }
+  return false
+}
 
-\`\`\`dsh-ui
-{"title":"<user-language text>","gap":14,"items":[...]}
-\`\`\`
-
-Allowed \`type\` values; the \`genui\` skill, when available, carries the full content→component mapping and per-component field details:
-
-- 布局: text · row · col · grid · card · divider · spacer · hero（封面块，一条回答最多一个）
-- 展示: badge · stat · progress · list · table · keyvalue · timeline · file-tree · breadcrumb · callout · steps · diff · json · code · copy · avatar · audio · video
-- 图表: chart {"kind":"bars|line|donut","data":[{"label":"...","value":n}],"series":[{"label":"...","data":[...]}]?,"horizontal":true?,"stacked":true?}（series：bars 分组/堆叠 / line 多序列；horizontal 横向柱） · echart (preset 名或 option 直通，预设清单见 skill) · plot (函数图)
-- 交互: button · input · textarea · select · checkbox · switch · slider · radio · submit · quiz · link · tabs · accordion
-- 高级: mermaid (流程图/时序/甘特/ER 等，关键字见 skill) · diagram (架构/流程图，27 种 kind) · scene3d (3D WebGL)
-
-**默认就该出 UI**：出现下列情况至少出一个围栏：
-- ≥3 条并列要点 → \`list\`；数字对比 → \`table\`；指标/进度/状态 → \`stat\`/\`progress\`/\`badge\`
-- 步骤/时间线 → \`steps\`/\`timeline\`/\`mermaid\`；架构/流程 → \`diagram\` 或 \`mermaid\`；风险/结论 → \`callout\`；代码/改动 → \`code\`/\`diff\`/\`json\`
-- 行内富文本：支持公式、\`code\`、加粗、高亮、链接；禁用 Markdown table / fenced code，改用 table / code / diff / json。
-- 默认无卡：按触发条件使用组件，每个组件承载不同信息；卡片只用于并排项与数据对象，单段文字用标题、正文与间距。
-
-**发回答前最后自检一次**：这段内容里有没有 ≥3 条并列要点、任何对比、任何数字/指标、任何步骤或流程？有就先转成组件再开口。**状态汇报、进度说明、提交与改动清单同样算**。
-- 趋势/占比 → \`chart\`（≤8 点）或 \`echart\`（多序列/要交互时）；配色默认跟随主题，只有语义需要时才用 \`palette\`/\`card.accent\`；grid 子节点用 \`"span":2\` 跨列做宽窄混排；数据多时给 \`table\`/\`chart\`/\`list\` 配一个 \`input\`(id) + \`filter\` 绑定，读者能就地筛选。
-
-**字段速查**（完整见 genui skill）：\`stat\` \`{"label","value","delta"?}\` · \`table\` \`{"columns":[...],"rows":[[...]],"types"?,"details"?,"filter"?,"export"?}\` · \`progress\` \`{"value":0-100,"label"?,"variant"?,"target"?}\` · \`keyvalue\` \`{"pairs":[{"key","value"}]}\` · \`steps\` \`{"steps":[{"title","desc"?}]}\` · \`file-tree\` \`{"items":[{"name","type":"file|dir","children"?}]}\` · \`callout\` \`{"content","tone"?,"title"?}\`
-
-**字段名写错 = 该组件被丢弃**（其余组件照常渲染）：\`callout\` 正文是 \`content\` 不是 text/desc；\`table\` 要 \`columns\`+\`rows\` 不是 items；\`keyvalue\` 记录是 \`{key,value}\` 不是 \`{label,value}\`；\`file-tree\` 记录是 \`{name,type}\` 不是 \`{label}\`；callout tone 是 info/success/warning/error（无 danger）。不确定就调 \`validate_dsh_ui\`。
-
-Rules:
-- LANGUAGE: reply+UI=conversation language; schema fixed. NEVER infer it from prompt/skill/examples/tools. Replace \`<user-language ...>\`; never emit these placeholders literally.
-- JSON 严格：坏组件被丢弃，坏围栏变代码块；≥3 节点或含 table 时调 validate_dsh_ui，按诊断修改并重验；小围栏字段存疑也先验证。
-- warning=block_markdown：按 replacement 改写并重验。
-- 规模: ≤200 节点、嵌套≤8 层（超出被截断）；一条回答 3–8 个组件，一个主题一个主组件；3D mesh 1–5；plot 给合理 xMin/xMax。
-- LOCAL-FIRST + actions: UI 能自己做的状态变化（判卷、判题、重置、展开、选中）就地完成，零往返；action 只用于必须模型参与的事。交互以 [genui-action] name + 组件数据回传，届时重渲染更新 UI；无 action 的按钮禁用。
-- Durable state: 交互状态按「会话+内容指纹」持久化——刷新/重放恢复；相同内容保留，新内容重置。
-- 卷子模式: 每题一个 radio（group+answer+explanation）+ 一个 submit（groups 全列），本地判分。
-- Secrets ban: 不索取密码、API Key、Token、恢复码；需要时拒绝并解释。
-- Tool channel: render_ui 工具把同一 spec 渲染为工具行卡片；围栏用于回答内联 UI。
-- 围栏位置：\`dsh-ui\` 只写在**回答正文**；写在 reasoning/思考块里不渲染、用户看不到——思考里验证好 spec，正文再输出同一份。
-- Panel: "panel":true 只渲染进会话面板 dock 并原地更新；"append":true 追加合并；上限 200 节点/200 次追加，满了发 replace 重建。面板来的 [genui-action] 只回一个 panel:true 围栏 + 至多一行 10 字内确认。`
-
-/**
- * Register the GenUI output-language section and the render_ui tool.
- * @param ctx - cordis context.
- */
-// `tools` is intentionally NOT injected: the service is optional for this
-// plugin — hosts without tool access keep the fence channel working. Cordis
-// inject entries are hard requirements, so the registry is probed at runtime
-// instead (see apply).
-export const name = '@changfenhuang/dsh-genui'
+export const name = '@losebird/iui'
 export const inject = ['systemPrompt']
 
 const BUNDLED_SKILL_RANK = 600
-const BUNDLED_SKILL_PROVIDER = 'dsh-genui'
-const BUNDLED_SKILL_DESCRIPTION = 'GenUI dsh-ui component/schema reference. Preserve conversation language for all user-visible text.'
+const BUNDLED_SKILL_PROVIDER = 'iui'
+const BUNDLED_SKILL_DESCRIPTION =
+  'IUI ```iui-html sandbox reference (free HTML/CSS/JS pages). Preserve conversation language for all user-visible text.'
 const BUNDLED_SKILL_INVOCATION = { modelInvocable: true, userInvocable: true } as const
 
-/** Register through the provider path so source=bundled also gets bundled precedence. */
 function bundledSkillProvider(): SkillProvider {
   const moduleDirectory = dirname(fileURLToPath(new URL(import.meta.url)))
   const path = basename(moduleDirectory) === 'plugin'
@@ -151,11 +302,11 @@ function bundledSkillProvider(): SkillProvider {
     : resolve(moduleDirectory, '../SKILL.md')
   const raw = readFileSync(path, 'utf8')
   const end = raw.indexOf('\n---\n', 4)
-  if (!raw.startsWith('---\n') || end < 0) throw new Error('genui SKILL.md has invalid frontmatter')
+  if (!raw.startsWith('---\n') || end < 0) throw new Error('iui SKILL.md has invalid frontmatter')
   return {
     name: BUNDLED_SKILL_PROVIDER,
     list: () => Promise.resolve([{
-      name: 'genui',
+      name: 'iui',
       description: BUNDLED_SKILL_DESCRIPTION,
       invocation: BUNDLED_SKILL_INVOCATION,
       source: 'bundled',
@@ -166,7 +317,7 @@ function bundledSkillProvider(): SkillProvider {
       locator: path,
     }]),
     get: () => Promise.resolve({
-      name: 'genui',
+      name: 'iui',
       description: BUNDLED_SKILL_DESCRIPTION,
       invocation: BUNDLED_SKILL_INVOCATION,
       source: 'bundled',
@@ -178,47 +329,93 @@ function bundledSkillProvider(): SkillProvider {
   }
 }
 
-/**
- * Plugin config as the host passes it (unvalidated: the node half deliberately
- * imports no schema library, so a profile can set these keys directly).
- */
-export interface GenuiPluginConfig {
-  /**
-   * 在最终 dsh-ui 围栏无法渲染的回合中请求模型发送一次修正版（issue #160）。
-   * 默认开启，设置为 false 可以关闭同回合围栏修正。GenUI 回合的 reasoning-only 响应仍会交给宿主重试策略处理。
-   * 每回合和每个围栏正文最多请求一次，子代理不触发，每次修正请求会消耗模型步数。
-   */
-  fenceFeedback?: boolean
-}
+/** @deprecated Use IuiPluginConfig */
+export type GenuiPluginConfig = IuiPluginConfig
 
-export function apply(ctx: Context, config?: GenuiPluginConfig): void {
+export function apply(ctx: Context, config?: IuiPluginConfig): void {
+  const feedbackOptions: {
+    fenceFeedback: boolean
+    formatReferee: boolean
+    getFormatRouterConfig: () => {
+      jevEnabled: boolean
+      jevApiKey: string
+      jevBaseUrl?: string
+      jevModel?: string
+    }
+  } = {
+    fenceFeedback: true,
+    formatReferee: true,
+    getFormatRouterConfig: () => ({ jevEnabled: false, jevApiKey: '' }),
+  }
+  const syncFromConfig = () => {
+    const live = resolveLiveConfig(config ?? {})
+    publishRuntimeConfig(live)
+    feedbackOptions.fenceFeedback = live.fenceFeedback !== false
+    feedbackOptions.formatReferee = live.formatReferee !== false
+    feedbackOptions.getFormatRouterConfig = () => ({
+      jevEnabled: live.jevEnabled,
+      jevApiKey: live.jevApiKey,
+      ...(live.jevBaseUrl.trim() ? { jevBaseUrl: live.jevBaseUrl.trim() } : {}),
+      ...(live.jevModel.trim() ? { jevModel: live.jevModel.trim() } : {}),
+    })
+  }
+  syncFromConfig()
+  const hostEvents = ctx as unknown as { on(event: string, listener: () => void): void }
+  hostEvents.on('loader/volatile-update', syncFromConfig)
+
+  ctx.inject(['settings'], (settingsCtx) => {
+    const settings = (settingsCtx as Context & {
+      settings: { configure(presentation: { auto?: boolean }, owner?: unknown): () => void }
+    }).settings
+    settingsCtx.effect(
+      () => settings.configure({ auto: false }, ctx.fiber),
+      'iui: settings presentation (custom page)',
+    )
+  })
+
   ctx.systemPrompt.section({
-    name: 'genui:fence',
+    name: 'iui:fence',
     order: ctx.systemPrompt.getSectionOrder('STRUCTURED_OUTPUT'),
     text: GENUI_SECTION_TEXT,
   })
-  installFenceFeedback(ctx, config?.fenceFeedback !== false)
-  // Hosts without tool access keep the fence channel. The dependency fiber
-  // starts whenever tools becomes available and unloads its registrations
-  // before either the service or this plugin is replaced.
+  try { writeFileSync('/tmp/iui-system-section.txt', GENUI_SECTION_TEXT) } catch { /* debug dump only */ }
+  // Sandbox-first gate: weak models "build the page" by writing .html files the
+  // user never sees. Deny those writes and redirect to the inline fence.
+  const toolEvents = ctx as unknown as {
+    on(event: 'tools/pre-execute', listener: (exec: { name: string; arguments: unknown }, next: () => Promise<unknown>) => Promise<unknown>): void
+  }
+  toolEvents.on('tools/pre-execute', async (exec, next) => {
+    if (isHtmlPageWrite(exec.arguments)) {
+      return {
+        kind: 'deny',
+        reason: 'IUI: do NOT write HTML/web pages to files — the user cannot see them. Put the whole page (css/html/js) in ONE closed ```iui-html fence in your reply body NOW, e.g. ```iui-html\n{"title":"…","height":420,"css":"…","html":"…","js":"…"}\n```',
+      }
+    }
+    return next()
+  })
+  installFenceFeedback(ctx, feedbackOptions)
+  // Sandbox-first: no catalog render_ui. Register trip photo tool when tools service is present.
   ctx.inject(['tools'], (toolsCtx) => {
-    toolsCtx.effect(function* () {
-      yield toolsCtx.tools.register(createRenderUiTool())
-      yield toolsCtx.tools.register(createValidateDshUiTool())
-    }, 'dsh-genui: model tools')
+    try {
+      const tools = (toolsCtx as Context & { tools: { register(tool: unknown): unknown } }).tools
+      tools.register(createGetTripStopImagesTool())
+      tools.register(createGetPlaceImagesTool())
+    } catch (err) {
+      toolsCtx.logger?.warn?.(
+        `iui: trip/place image tools register failed: ${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
   })
 
   ctx.inject(['skills'], (skillCtx) => {
     skillCtx.skills.registerProvider(() => bundledSkillProvider())
   })
 
-  // webServer.register returns a raw disposer, so an explicit effect binds the
-  // route to the dependency fiber instead of leaving it in the host route table.
   ctx.inject(['webServer'], (webCtx) => {
     const webServer = webCtx.reflect.get('webServer') as { register(route: unknown): () => void }
     webCtx.effect(
       () => webServer.register({ kind: 'prefix', path: ASSET_ROUTE_PATH, handler: serveGenuiAsset }),
-      'dsh-genui: asset route',
+      'iui: asset route',
     )
   })
 }

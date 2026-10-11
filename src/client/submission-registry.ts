@@ -61,7 +61,7 @@ export function analyzeSubmissionRegistry(spec: GenuiSpec): { registry: Submissi
     switch (node.type) {
       case 'radio':
         if (node.group === undefined) return
-        member = { kind: 'radio', key: node.group, label: node.label ?? node.group, options: node.options.slice(0, GENUI_LIMITS.maxOptions), ...(node.answer === undefined ? {} : { answer: node.answer }), ...(node.explanation === undefined ? {} : { explanation: node.explanation }) }
+        member = { kind: 'radio', key: node.group, label: node.label ?? node.group, options: node.options.map((o) => typeof o === 'string' ? o : o.label).slice(0, GENUI_LIMITS.maxOptions), ...(node.answer === undefined ? {} : { answer: node.answer }), ...(node.explanation === undefined ? {} : { explanation: node.explanation }) }
         keyPath = `${path}.group`
         break
       case 'checkbox':

@@ -7,3 +7,5 @@ lib/
 .playwright-cli/
 # macOS Finder metadata (never source)
 .DS_Store
+
+.corepack-home/

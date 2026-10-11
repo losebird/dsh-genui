@@ -32,6 +32,9 @@ export type GenuiNode = (
   | GenuiAudio
   | GenuiVideo
   | GenuiBadge
+  | GenuiEntity
+  | GenuiChips
+  | GenuiMap
   | GenuiStat
   | GenuiHero
   | GenuiProgress
@@ -71,6 +74,11 @@ export type GenuiNode = (
 export interface GenuiSpec {
   /** Short title shown as the card banner. */
   title?: string
+  /**
+   * Inline binding seed (optional). Prefer tool-bridge `$bind:id` filled by
+   * the Host from tool results; this map lets the model also declare defaults.
+   */
+  bindings?: Record<string, string | number>
   /** Vertical gap between root items in px. */
   gap?: number
   /** Panel-only flag: `true` routes the fence to the session panel dock
@@ -162,10 +170,12 @@ export interface GenuiLink {
   label: string
   /**
    * Optional http(s)/mailto target. With `href` the node renders a REAL
-   * anchor (target=_blank + noopener); without it the node renders as plain
-   * styled text — never a dead clickable-looking control.
+   * anchor (target=_blank + noopener) styled as an open-CTA pill; without it
+   * the node shows empty/error chrome — never a dead clickable-looking control.
    */
   href?: string
+  /** Visual weight for open CTAs (map / external actions). Default secondary. */
+  tone?: 'primary' | 'secondary' | 'ghost'
 }
 
 /** User-controlled image from a browser-reachable URL. */
@@ -204,6 +214,61 @@ export interface GenuiBadge {
   icon?: string
 }
 
+/** Entity chip: person/place/thing with optional open/action (ChatGPT-like). */
+export interface GenuiEntity {
+  type: 'entity'
+  title: string
+  subtitle?: string
+  /** Small pill on the chip. */
+  label?: string
+  tone?: 'success' | 'warn' | 'danger' | 'accent' | 'muted'
+  icon?: string
+  href?: string
+  action?: string
+}
+
+/** Horizontal wrap of entity / badge chips. */
+export interface GenuiChips {
+  type: 'chips'
+  items: Array<string | GenuiEntity | GenuiBadge | { type?: string; title?: string; label?: string; subtitle?: string; tone?: string; icon?: string; href?: string; action?: string }>
+}
+
+/**
+ * Map / destination card. Renders a real map surface (OSM embed or Leaflet
+ * tiles). Prefer lat/lng; otherwise free-text query is geocoded at render time.
+ * Optional author `embed` (https, host allowlist) overrides the auto surface.
+ */
+export interface GenuiMap {
+  type: 'map'
+  title?: string
+  address?: string
+  label?: string
+  lat?: number
+  lng?: number
+  /** Map zoom 1–19 (default 15). */
+  zoom?: number
+  /**
+   * `osm` = OpenStreetMap export iframe (needs coords).
+   * `leaflet` = interactive OSM tiles (+ Nominatim when coords missing).
+   * Default: leaflet (interactive real map).
+   */
+  provider?: 'osm' | 'leaflet'
+  /** Free-text place used for geocode / default external CTAs. */
+  query?: string
+  facts?: string[]
+  links?: Array<{ label: string; href: string }>
+  /** Optional iframe embed (https only; host allowlist in renderer). */
+  embed?: string
+  /** Extra pins (lat/lng/label) — no hard-coded city table. */
+  markers?: Array<{ lat: number; lng: number; label?: string }>
+  /** Optional route polyline (lat/lng). Drawn when present or when route=true with markers. */
+  path?: Array<{ lat: number; lng: number }>
+  /** When true, connect markers (and center) with a route line. */
+  route?: boolean
+  /** Embed height in px (160–640). Default from density token. */
+  height?: number
+}
+
 /** Cover band: the answer's focal point. One per fence — an eyebrow label, an
  *  oversized metric, a title and a subtitle on a soft tinted surface. */
 export interface GenuiHero {
@@ -228,6 +293,17 @@ export interface GenuiStat {
   spark?: number[]
   /** `hero` renders one oversized number — use it once per fence as the anchor. */
   size?: 'hero'
+  /** Circular gauge 0–100 in the card corner (ChatGPT Intelligent UI). */
+  ring?: number
+  /** Secondary line under the value (e.g. "已用 15.8 / 16 GB"). */
+  hint?: string
+  /** Semantic color for value + ring (danger = ChatGPT memory alert). */
+  tone?: 'default' | 'success' | 'warning' | 'danger'
+  /**
+   * Local-only: read live value from a sibling field id (slider/input).
+   * Updates without a model round-trip.
+   */
+  valueFrom?: string
 }
 
 export interface GenuiProgress {
@@ -239,6 +315,11 @@ export interface GenuiProgress {
   variant?: 'bar' | 'ring'
   /** Optional target marker on the bar track (0-100). */
   target?: number
+  /**
+   * Local-only: bind to sibling field id (usually a slider). Dragging the
+   * slider updates this progress instantly — no model round-trip.
+   */
+  valueFrom?: string
 }
 
 export interface GenuiDivider {
@@ -313,6 +394,11 @@ export interface GenuiTable {
   filterColumn?: number
   /** Field id of a select whose value is a column header: sorts by it locally. */
   sortField?: string
+  /**
+   * Presentation: `table` (default grid), `cards` (one card per row — ChatGPT-like
+   * on narrow / comparison lists), `auto` (cards below ~560px, table otherwise).
+   */
+  layout?: 'table' | 'cards' | 'auto'
 }
 
 /** How a table column's cells render.
@@ -326,12 +412,18 @@ export interface GenuiChartDatum {
   label: string
   value: number
   color?: string
+  /** Range-bar low (weather daily). */
+  lo?: number
+  /** Range-bar high (weather daily). */
+  hi?: number
+  /** Side meta (e.g. precipitation "0%"). */
+  meta?: string
 }
 
 export interface GenuiChart {
   type: 'chart'
-  /** Chart shape: bars (default), line (trend), donut (share). */
-  kind?: 'bars' | 'line' | 'donut'
+  /** Chart shape: bars (default), line (trend), donut (share), range (lo–hi bars). */
+  kind?: 'bars' | 'line' | 'donut' | 'range'
   data: GenuiChartDatum[]
   /** Multi-series: grouped bars, or one line per entry when kind is line. */
   series?: Array<{ label: string; color?: string; data: GenuiChartDatum[] }>
@@ -412,6 +504,16 @@ export interface GenuiSteps {
   /** Completed steps are rendered in the accent color, the rest muted. */
   current?: number
   steps: GenuiStep[]
+  /**
+   * When true (default), each step marker is a local checklist toggle.
+   * Set false for read-only progress indicators.
+   */
+  checkable?: boolean
+  /**
+   * When true (default), step descriptions expand/collapse on header click.
+   * Set false to always show descriptions.
+   */
+  expandable?: boolean
 }
 
 export interface GenuiKeyValue {
@@ -445,12 +547,17 @@ export interface GenuiCode {
 
 /* ---------------- v1.2: richer interactivity ---------------- */
 
+/** Radio choice: plain label, or label + description (ChatGPT intake). */
+export type GenuiRadioOption = string | { label: string; desc?: string }
+
 export interface GenuiRadio {
   type: 'radio'
   label?: string
-  options: string[]
+  options: GenuiRadioOption[]
   /** Default-selected option index. */
   selected?: number
+  /** `list` (default) vertical radios; `segmented` pill toggle (e.g. 中文 | English). */
+  layout?: 'list' | 'segmented'
   /** v2: when set, interaction sends this action back to the model. */
   action?: string
   /**
@@ -502,6 +609,8 @@ export interface GenuiSwitch {
   checked?: boolean
   /** v2: when set, interaction sends this action back to the model. */
   action?: string
+  /** When true (or when `action` is omitted), toggle stays local — no round-trip. */
+  local?: boolean
 }
 
 /**
@@ -522,6 +631,11 @@ export interface GenuiSlider {
   action?: string
   /** v2.9: stable field id — durable value + submit collection. */
   id?: string
+  /**
+   * When true (or when `action` is omitted), never send a model round-trip.
+   * Local field updates + valueFrom consumers still work.
+   */
+  local?: boolean
 }
 
 export interface GenuiTextarea {

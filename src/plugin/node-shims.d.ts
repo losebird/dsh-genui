@@ -11,9 +11,11 @@ declare module 'node:http' {
   export interface IncomingMessage {
     method?: string
     url?: string
+    on(event: string, listener: (...args: unknown[]) => void): IncomingMessage
   }
   export interface ServerResponse {
     writeHead(statusCode: number, headers?: Record<string, string>): ServerResponse
+    write(chunk: string | Buffer): boolean
     end(data?: string | Buffer): void
   }
 }

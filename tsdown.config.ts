@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url'
 import type { UserConfig } from 'tsdown'
 import { transform } from 'lightningcss'
 
-const ID = '@changfenhuang/dsh-genui'
+const ID = '@losebird/iui'
 const PROJECT_ROOT = dirname(fileURLToPath(import.meta.url))
 
 /** Module-table entries this bundle may leave external: platform seed rows
@@ -59,7 +59,8 @@ function cssModulesPlugin(): NonNullable<UserConfig['plugins']>[number] {
         .map(([local, exp]) => [local, exp.name] as const)
         .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
       const classMap = Object.fromEntries(entries)
-      const tagId = `${ID}/${basename(fileId)}`
+      // Use stable relative path so packs/*/pack.module.css do not collide on basename.
+      const tagId = `${ID}/${stableId}`
       return [
         `const css = ${JSON.stringify(code.toString())};`,
         `const tagId = ${JSON.stringify(tagId)};`,
@@ -258,6 +259,42 @@ const libConfig: UserConfig = {
   // Cleanup happens in the build script (`rm -rf lib` before tsc): tsdown
   // must never wipe lib/types (tsc's declaration output) mid-pipeline.
   clean: false,
+}
+
+
+/** Official UI pack assets: React stays external (injected on window before
+ * script load). Emotion/antd/chakra/mui are bundled into each IIFE. */
+function packAssetConfig(name: 'pack-mui' | 'pack-antd' | 'pack-chakra', entry: string): UserConfig {
+  const reactExternals = ['react', 'react/jsx-runtime', 'react-dom', 'react-dom/client']
+  return {
+    name: `${ID}/assets/${name}`,
+    entry: { [`assets/${name}`]: entry },
+    outDir: 'lib',
+    format: 'iife',
+    platform: 'browser',
+    dts: false,
+    minify: true,
+    sourcemap: false,
+    clean: false,
+    deps: {
+      neverBundle: reactExternals,
+      alwaysBundle: (id: string) => !reactExternals.includes(id),
+    },
+    define: {
+      'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV ?? 'production'),
+    },
+    plugins: [cssModulesPlugin()],
+    outputOptions: {
+      entryFileNames: '[name].js',
+      // Classic script: host injects window.React / window.jsxRuntime first.
+      globals: {
+        react: 'React',
+        'react/jsx-runtime': 'jsxRuntime',
+        'react-dom': 'ReactDOM',
+        'react-dom/client': 'ReactDOM',
+      },
+    },
+  }
 }
 
 export default [

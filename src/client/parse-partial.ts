@@ -99,6 +99,19 @@ export function collectPartialCandidates(raw: string): { candidates: PartialCand
         // component's data[] member cannot become a candidate.
         push({ end: scanned + 1, closingSuffix: ']}' })
       }
+      // Progressive mount by node: finished child inside an OPEN layout
+      // wrapper at root (row/col/grid/card) — close the layout + root so the
+      // finished sibling mounts without waiting for the parent to finish.
+      if (
+        ch === '}'
+        && stack.length === 4
+        && stack[0] === '{'
+        && stack[1] === '['
+        && stack[2] === '{'
+        && stack[3] === '['
+      ) {
+        push({ end: scanned + 1, closingSuffix: ']}]}' })
+      }
       if (stack.length === 0) {
         // Whole prefix balanced: a complete-JSON candidate (trailing comma /
         // fence tail cases).
@@ -167,4 +180,27 @@ export function parsePartialGenuiSpec(raw: string): GenuiSpec | null {
 
   // 3. Not even one complete element yet (e.g. `{"items":[{"type":"tex`).
   return null
+}
+
+
+/** True when brackets are still open — fence is mid-stream (or truncated). */
+export function isPartialFenceBody(raw: string): boolean {
+  const text = raw.trim()
+  if (text === '') return true
+  let depth = 0
+  let inString = false
+  let escaped = false
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]!
+    if (inString) {
+      if (escaped) escaped = false
+      else if (ch === '\\') escaped = true
+      else if (ch === '"') inString = false
+      continue
+    }
+    if (ch === '"') { inString = true; continue }
+    if (ch === '{' || ch === '[') depth++
+    else if (ch === '}' || ch === ']') depth--
+  }
+  return depth !== 0 || inString
 }

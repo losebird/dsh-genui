@@ -14,6 +14,10 @@
 >
 > 🔌 Ecosystem: the repo carries the `#dsh` · `#dsh-plugin` topics — welcome to be listed by @dsh-plugin.
 
+
+> **IUI fork (`@losebird/iui`) default path:** dsh → model (e.g. Muse Spark / any OpenAI-compatible) → plugin soft-constraints → **```iui-html** free HTML/CSS/JS sandbox (stream: css → html → js). **No** catalog packs, **no** in-process Gateway/DIL, **no** `:3101` vLLM on the default path. See [docs/REDESIGN-SANDBOX-FIRST.zh-CN.md](./docs/REDESIGN-SANDBOX-FIRST.zh-CN.md), [ARCHITECTURE.md](./ARCHITECTURE.md), [docs/SETTINGS.md](./docs/SETTINGS.md).
+
+
 `dsh-genui` turns a model reply into a **safe, interactive DSH surface**. Ask “how are this month’s orders doing?” and the answer can include a sortable data panel, a native video, a draggable plot, a local quiz, or a persistent session panel — without replacing the surrounding text.
 
 ## Start with the evidence

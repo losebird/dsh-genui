@@ -34,24 +34,21 @@ describe('SKILL.md frontmatter (host yaml parser)', () => {
 
   it('declares name and a non-empty description', () => {
     const data = parse(frontmatterYaml(raw)) as Record<string, unknown>
-    expect(data.name).toBe('genui')
+    expect(data.name).toBe('iui')
     expect(typeof data.description).toBe('string')
     expect((data.description as string).length).toBeGreaterThan(20)
     expect(data.description).toContain('Preserve conversation language')
+    expect(data.description).toMatch(/HTML\/CSS\/JS|sandbox/i)
     expect(data.description).not.toMatch(/[\u3400-\u9fff]/u)
   })
 })
 
-describe('SKILL.md command-delivery contract', () => {
+describe('SKILL.md sandbox-first contract', () => {
   const raw = readFileSync(join(process.cwd(), 'SKILL.md'), 'utf8')
 
-  it('requires a copy-paste-runnable heredoc for multi-line python', () => {
-    // Real-session complaint: the model delivered a multi-line python as
-    // `python -c "…"` with backslash continuations; the user copied it, had to
-    // reassemble it, and ended up writing the heredoc by hand. The skill must
-    // keep telling the model to emit ONE pasteable block instead.
-    expect(raw).toContain("python - <<'PY'")
-    expect(raw).toMatch(/不要用 `python -c/)
-    expect(raw).toContain('一次粘进终端就能跑')
+  it('requires iui-html fence contract and forbids legacy catalog / file writes', () => {
+    expect(raw).toContain('```iui-html')
+    expect(raw).toMatch(/不要写文件|不要先调 bash/)
+    expect(raw).toMatch(/旧 ```iui 组件树|```json 冒充 UI/)
   })
 })

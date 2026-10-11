@@ -15,17 +15,15 @@
  * Structural types are declared locally on purpose: the context contract is
  * a data shape, and pristine hosts do not export the host-side type names.
  */
-import { Fragment, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type Key, type ReactNode } from 'react'
+import { useLayoutEffect, useRef, useState, type CSSProperties, type Key, type ReactNode } from 'react'
 import { CodeBlock } from '@deepseek-ai/dsh-client-ui-primitives'
 import { codeBlockLabels } from './primitive-labels.ts'
 import { t, useT } from './i18n/index.ts'
-import { ErrorBoundary } from './ErrorBoundary.tsx'
-import { ExportableGenuiBlock } from './artifact/ExportableGenuiBlock.tsx'
-import { fenceStateKey } from './interaction-store.ts'
-import { applyPanelOperation, diagnosePanelBudget, type PanelOperationStatus } from './panel-store.ts'
+import { parseHtmlSandboxFence } from '../shared/html-sandbox.ts'
+import { renderHtmlFence } from './html-fence.tsx'
 import type { GenuiSpec } from './spec.ts'
-import { describeJsonFailure, isCompleteJson } from '../shared/fence-repair.ts'
-import { resolveFence, resolveFenceSpec, type FenceResolution } from '../shared/fence-resolve.ts'
+import { describeJsonFailure } from '../shared/fence-repair.ts'
+import { resolveFence, type FenceResolution } from '../shared/fence-resolve.ts'
 
 /** Settled fence source identity (data shape, host-independent). */
 export interface GenuiFenceSource {
@@ -41,6 +39,8 @@ export interface GenuiFenceContext {
   readonly sessionId?: string
   /** Present only for settled/interrupted renders with a stable identity. */
   readonly source?: GenuiFenceSource
+  /** True while the host message still carries [data-streaming]. */
+  readonly streaming?: boolean
 }
 
 const FENCE_ERROR_STYLE: CSSProperties = {
@@ -147,31 +147,6 @@ function FenceFallback({ raw, fenceKey }: { raw: string; fenceKey: Key }) {
 }
 
 /**
- * Keyed publisher for a settled `panel:true` fence: submits ONE panel
- * operation from the host-provided stable source (id + order), in an
- * effect — never inside the render function. StrictMode's duplicate effects
- * are absorbed by the operation map's per-source dedup, so the panel folds
- * and notifies exactly once per source. Renders nothing.
- */
-function FencePanelPublisher({ sessionId, sourceId, order, spec }: {
-  sessionId: string
-  sourceId: string
-  order: readonly [number, number, number]
-  spec: GenuiSpec
-}) {
-  useEffect(() => {
-    const status: PanelOperationStatus = applyPanelOperation(sessionId, {
-      sourceId,
-      order,
-      mode: spec.append === true ? 'append' : 'replace',
-      spec,
-    })
-    if (status === 'overflow') diagnosePanelBudget(sessionId, sourceId)
-  }, [sessionId, sourceId, order, spec])
-  return null
-}
-
-/**
  * Resolve a raw fence body to a guarded spec.
  *
  * - Tier-1 repair (quote escape + trailing commas): safe at any time —
@@ -184,58 +159,61 @@ function FencePanelPublisher({ sessionId, sourceId, order, spec }: {
  *   aliases, empty collections, or line/donut series cannot repair into a
  *   default/blank chart.
  */
-export function resolveGenuiSpec(raw: string, context?: GenuiFenceContext): GenuiSpec | null {
-  return resolveFenceSpec(raw, { settled: context?.source !== undefined })
+export function resolveGenuiFence(raw: string, context?: GenuiFenceContext): FenceResolution {
+  const settled = context?.source !== undefined
+  const stableSeed =
+    context?.sessionId && context?.source
+      ? `${context.sessionId}:${context.source.id}`
+      : context?.sessionId
+        ? `${context.sessionId}:${raw.slice(0, 64)}`
+        : undefined
+  return resolveFence(raw, {
+    settled,
+    ...(context?.sessionId !== undefined ? { sessionId: context.sessionId } : {}),
+    ...(stableSeed !== undefined ? { stableSeed } : {}),
+  })
 }
 
-/** The inline GenuiBlock tree for a resolved non-panel spec. */
-function renderInlineFence(key: Key, context: GenuiFenceContext | undefined, spec: GenuiSpec): ReactNode {
-  const sessionId = context?.sessionId
-  const stateKey = sessionId === undefined || context?.source === undefined
-    ? undefined
-    : fenceStateKey(sessionId, context.source.id, JSON.stringify(spec))
+export function resolveGenuiSpec(raw: string, context?: GenuiFenceContext): GenuiSpec | null {
+  return resolveGenuiFence(raw, context).spec
+}
+
+/** Sandbox-first legacy notice (catalog GenuiBlock / panel removed). */
+function renderLegacyCatalogTip(key: Key): ReactNode {
   return (
-    // Keep the document slot mounted across streaming→settled; GenuiBlock
-    // owns durable-state changes, while a session change resets the tree.
-    // Repaired specs render SILENTLY: once the UI renders, no amber note
-    // tells the user something was wrong — only an unrecoverable body keeps
-    // the red diagnostic.
-    <ErrorBoundary key={JSON.stringify([sessionId, key])} label={t('err.boundary.fence')}>
-      <ExportableGenuiBlock spec={spec} animateEntrance={context?.source === undefined} stateKey={stateKey} exportEnabled={context?.source !== undefined} />
-    </ErrorBoundary>
+    <div
+      key={key}
+      data-iui-legacy-catalog="1"
+      style={{
+        padding: '12px 14px',
+        borderRadius: 12,
+        border: '1px solid var(--dsl-g-border-surface, #e5e7eb)',
+        background: 'var(--dsl-g-surface, #fff)',
+        fontSize: 13,
+        color: 'var(--dsw-alias-label-secondary, #374151)',
+        lineHeight: 1.5,
+      }}
+    >
+      <strong>目录组件卡已移除。</strong>请改用 <code>{'```iui-html'}</code> 自由页（HTML/CSS/JS 沙箱）。
+    </div>
   )
 }
 
 /**
- * The resolved fence render for the DOM channel: `null` when the body is
- * unrepairable (the stock code block stays visible), otherwise the panel
- * publisher (`panel:true`; renders nothing in the flow — mounted as an empty
- * root so the taken-over block is hidden) or the inline GenuiBlock tree.
- * Shared verbatim by both channels.
+ * DOM-channel resolved fence: sandbox mounts; catalog/panel GenuiBlock blocked
+ * (aligned with registry {@link renderGenuiFence}). Returns a tip node so the
+ * stock code block stays hidden rather than flashing raw JSON.
  */
 export function renderResolvedFenceNode(raw: string, key: Key, context?: GenuiFenceContext): ReactNode | null {
-  const spec = resolveGenuiSpec(raw, context)
-  if (spec === null) return null
-  if (spec.panel === true) {
-    // Publish only with a settled stable source — streaming/identity-less
-    // renders keep the panel untouched. Appends additionally gate on a
-    // complete body (a settled-but-malformed append never merges partial
-    // content).
-    if (context !== undefined && context.sessionId !== undefined && context.source !== undefined) {
-      if (spec.append === true && !isCompleteJson(raw)) return <Fragment key={key} />
-      return (
-        <FencePanelPublisher
-          key={key}
-          sessionId={context.sessionId}
-          sourceId={context.source.id}
-          order={context.source.order}
-          spec={spec}
-        />
-      )
-    }
-    return <Fragment key={key} />
+  // P1-N2: never render ExportableGenuiBlock / panel publisher on DOM channel.
+  if (parseHtmlSandboxFence(raw) !== null) {
+    return renderHtmlFence(raw, key, context)
   }
-  return renderInlineFence(key, context, spec)
+  // Unrepairable / incomplete bodies stay null so DOM channel keeps stock code
+  // block (+ settled diagnostic). Repairable catalog/panel specs → legacy tip.
+  const resolution = resolveGenuiFence(raw, context)
+  if (resolution.spec === null) return null
+  return renderLegacyCatalogTip(key)
 }
 
 /**
@@ -245,22 +223,9 @@ export function renderResolvedFenceNode(raw: string, key: Key, context?: GenuiFe
  * unpublishable `panel:true` fence renders `null` (nothing in the flow).
  */
 export function renderGenuiFence(raw: string, key: Key, context?: GenuiFenceContext): ReactNode {
-  const spec = resolveGenuiSpec(raw, context)
-  if (spec === null) return <FenceFallback key={key} fenceKey={key} raw={raw} />
-  if (spec.panel === true) {
-    if (context !== undefined && context.sessionId !== undefined && context.source !== undefined) {
-      if (spec.append === true && !isCompleteJson(raw)) return null
-      return (
-        <FencePanelPublisher
-          key={key}
-          sessionId={context.sessionId}
-          sourceId={context.source.id}
-          order={context.source.order}
-          spec={spec}
-        />
-      )
-    }
-    return null
+  // Sandbox-first: legacy ```iui / dsh-ui bodies that look like html sandbox mount here.
+  if (parseHtmlSandboxFence(raw) !== null) {
+    return renderHtmlFence(raw, key, context)
   }
-  return renderInlineFence(key, context, spec)
+  return renderLegacyCatalogTip(key)
 }

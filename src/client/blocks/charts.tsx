@@ -21,6 +21,7 @@ import css from '../GenuiBlock.module.css'
 import { GENUI_LIMITS } from '../genui-runtime/index.ts'
 import type { GenuiChart, GenuiTable } from '../spec.ts'
 import { isTableGroupHeaderRow, tableRowsForDetails } from '../table-details.ts'
+import { EmptyState } from '../ui/StatusBlock.tsx'
 
 export const CHART_COLORS = [
   'var(--dsw-static-deepseek-400)',
@@ -235,6 +236,9 @@ export const TableNode = memo(function TableNode({ node, renderDetail, filterVal
   useT()
   const columns = node.columns.slice(0, GENUI_LIMITS.maxTableCols)
   const rows = tableRowsForDetails<GenuiTable['rows'][number]>(node)
+  if (rows.length === 0) {
+    return <EmptyState kind="table" {...(filterValue?.trim() ? { detail: tr('status.filteredEmpty') } : {})} />
+  }
   const types = node.types ?? []
   const [sort, setSort] = useState<{ col: number; dir: 1 | -1 } | null>(null)
   const [collapsed, setCollapsed] = useState<ReadonlySet<number>>(() => new Set())
@@ -269,6 +273,9 @@ export const TableNode = memo(function TableNode({ node, renderDetail, filterVal
     })
   const visibleRows = filtered.map(entry => entry.row)
   const hiddenCount = rows.length - visibleRows.length
+  if (visibleRows.length === 0) {
+    return <EmptyState kind="table" detail={tr('status.filteredEmpty')} />
+  }
 
   interface Section { header: { row: GenuiTable['rows'][number]; index: number } | null; children: Array<{ row: GenuiTable['rows'][number]; index: number }> }
   const sections: Section[] = []
@@ -601,6 +608,11 @@ export const ChartNode = memo(function ChartNode({ chart, filterValue }: {
   filterValue?: string | undefined
 }) {
   const filtered = useMemo(() => applyChartFilter(chart, filterValue), [chart, filterValue])
+  const hasData = (filtered.series?.some(s => s.data.length > 0) ?? false)
+    || (filtered.data?.length ?? 0) > 0
+  if (!hasData) {
+    return <EmptyState kind="chart" {...(filterValue?.trim() ? { detail: tr('status.filteredEmpty') } : {})} />
+  }
   const kind = filtered.kind ?? 'bars'
   if (kind === 'donut') return <DonutNode chart={filtered} />
   if (kind === 'line') return <LineChartNode chart={filtered} />

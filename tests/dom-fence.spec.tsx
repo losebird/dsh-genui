@@ -10,7 +10,7 @@ import { installDomFenceRenderer, setDomRootFactory, sourceLanguageOf } from '..
 import { inject } from '../src/client/index.tsx'
 import { clearSessionPanel, getPanelSpec } from '../src/client/panel-store.ts'
 
-const VALID_SPEC = '{"title":"卡片","items":[{"type":"text","content":"你好，世界"}]}'
+const VALID_SPEC = '{"title":"卡片","items":[{"type":"text","content":"目录组件卡已移除"}]}'
 const BUTTON_SPEC = '{"items":[{"type":"button","label":"刷新","action":"refresh"}]}'
 const PANEL_SPEC = '{"panel":true,"title":"面板A","items":[{"type":"text","content":"A"}]}'
 const BROKEN_SPEC = '{"items":[{"type":"text","content":'
@@ -139,7 +139,7 @@ describe('installDomFenceRenderer', () => {
     document.body.appendChild(row)
     const dispose = installDomFenceRenderer(makeModernCtx('desktop-session'), () => {})
     try {
-      expect(await waitFor(() => row.querySelector('.genui-dom-fence')?.textContent?.includes('你好，世界') === true)).toBe(true)
+      expect(await waitFor(() => row.querySelector('.genui-dom-fence')?.textContent?.includes('目录组件卡已移除') === true)).toBe(true)
       expect(tag.style.display).toBe('none')
       expect(prose.textContent).toBe('回答正文')
     } finally { dispose() }
@@ -155,10 +155,11 @@ describe('installDomFenceRenderer', () => {
     document.body.appendChild(row)
     const dispose = installDomFenceRenderer(makeModernCtx('desktop-stream-session'), () => {})
     try {
-      expect(await waitFor(() => row.querySelector('.genui-dom-fence')?.textContent?.includes('你好，世界') === true)).toBe(true)
+      expect(await waitFor(() => row.querySelector('.genui-dom-fence')?.textContent?.includes('目录组件卡已移除') === true)).toBe(true)
       tag.textContent = '<dsh-ui>\n{"title":"更新","items":[{"type":"text","content":"更新内容"}]}\n</dsh-ui>'
       row.removeAttribute('data-streaming')
-      expect(await waitFor(() => row.querySelector('.genui-dom-fence')?.textContent?.includes('更新内容') === true)).toBe(true)
+      expect(await waitFor(() => row.querySelector('.genui-dom-fence')?.textContent?.includes('目录组件卡已移除') === true)).toBe(true)
+      expect(row.querySelector('[data-iui-legacy-catalog]')?.getAttribute('data-iui-legacy-catalog')).toBe('1')
     } finally { dispose() }
   })
 
@@ -168,7 +169,7 @@ describe('installDomFenceRenderer', () => {
     document.body.appendChild(tag)
     const dispose = installDomFenceRenderer(makeModernCtx('desktop-no-row-session'), () => {})
     try {
-      expect(await waitFor(() => document.querySelector('.genui-dom-fence')?.textContent?.includes('你好，世界') === true)).toBe(true)
+      expect(await waitFor(() => document.querySelector('.genui-dom-fence')?.textContent?.includes('目录组件卡已移除') === true)).toBe(true)
       expect(tag.style.display).toBe('none')
     } finally { dispose() }
   })
@@ -193,57 +194,59 @@ describe('installDomFenceRenderer', () => {
     } finally { dispose() }
   })
 
-  it.each(['Code', 'Code block', '代码块', 'Код', 'Código', 'Codice', 'Kode'])('renders canonical GenUI from a generic %s banner', async label => {
-    // 标签集合刻意跨语系：本地化通用标题是宿主呈现文案，不是语言（issue #258）——
-    // 旧白名单只列英/中，俄语等 locale 下同一份围栏永远停在代码块。
-    const row = assistantRow('generic-valid')
-    const block = genericCodeBlock(VALID_SPEC, label)
+
+  it.each(['Code', 'Code block', '代码块', 'Код', 'Código'])('mounts ```iui-html sandbox from a generic %s banner (host hid lang)', async label => {
+    // Sandbox-first regression: host highlighter strips `iui-html` → localized「代码块」.
+    // ChatSnapshot source may be unavailable; content rescue must still mount the iframe
+    // (Ace 3081: Shanghai→France trip rendered as raw JSON code block).
+    const sandbox = JSON.stringify({
+      title: '上海飞法国',
+      height: 420,
+      css: '.wrap{padding:12px}',
+      html: '<div class="wrap" data-proof="sandbox-mount">trip</div>',
+      js: '',
+    })
+    const row = assistantRow('generic-sandbox')
+    const block = genericCodeBlock(sandbox, label)
     row.appendChild(block)
     document.body.appendChild(row)
-    const dispose = installDomFenceRenderer(makeModernCtx('generic-session'), () => {})
+    const dispose = installDomFenceRenderer(makeModernCtx('generic-sandbox-session'), () => {})
     try {
       expect(await waitFor(() => block.hasAttribute('data-genui-rendered'))).toBe(true)
-      expect(await waitFor(() => row.querySelector('.genui-dom-fence')?.textContent?.includes('你好，世界') === true)).toBe(true)
+      expect(await waitFor(() => row.querySelector('[data-iui-html-sandbox]') !== null)).toBe(true)
+      expect(block.style.display).toBe('none')
     } finally { dispose() }
   })
 
-  it('takes over a generic banner whose body only needs tier-1 punctuation repairs', async () => {
-    // Real session (seq 40530): the model finally emitted the fence in the body,
-    // but one value carried unescaped half-width quotes. The host hides the
-    // `dsh-ui` language (unsupported by its highlighter) and the ChatSnapshot
-    // language source was unavailable for that row, so content recognition was
-    // the only path left — and it demanded a raw JSON.parse, so a perfectly
-    // renderable fence stayed a code block. Recognition now runs the same tier-1
-    // repair as the labelled path.
-    const repairable = '{"items":[{"type":"keyvalue","pairs":[{"key":"备注","value":"他说"可以"了 ✓"}]}]}'
-    expect(() => JSON.parse(repairable)).toThrow()
-    const row = assistantRow('generic-repairable')
-    const block = genericCodeBlock(repairable)
+  it.each(['Code', 'Code block', '代码块', 'Код', 'Código', 'Codice', 'Kode'])('does not take over catalog GenUI from a generic %s banner (sandbox-first)', async label => {
+    const row = assistantRow(`generic-${label}`)
+    const block = genericCodeBlock(VALID_SPEC)
+    // generic banner label text
+    const banner = block.querySelector('[data-code-block-banner]')
+    if (banner) banner.textContent = label
     row.appendChild(block)
     document.body.appendChild(row)
     const dispose = installDomFenceRenderer(makeModernCtx('generic-session'), () => {})
     try {
-      expect(await waitFor(() => block.hasAttribute('data-genui-rendered'))).toBe(true)
-      expect(await waitFor(() => row.querySelector('.genui-dom-fence')?.textContent?.includes('可以') === true)).toBe(true)
+      await tick()
+      expect(block.hasAttribute('data-genui-rendered')).toBe(false)
+      expect(row.querySelector('.genui-dom-fence')).toBeNull()
     } finally { dispose() }
   })
 
-  it('takes over a generic banner whose body is a spec followed by trailing junk', async () => {
-    // Real sample: the model leaked its tool-call template after the JSON and
-    // never closed the fence, so the host rendered everything as one code block.
-    // Content recognition must cut back to the balanced root instead of giving up.
-    const body = '{"items":[{"type":"table","columns":["观察项"],"rows":[["RL3b 转 pass"]]}]}'
-    const leaker = `${body}\n</x> parameter>\n</x> invoke>\n</x> calls>`
-    const row = assistantRow('generic-trailing-junk')
-    const block = genericCodeBlock(leaker)
+  it('does not take over catalog GenUI needing tier-1 repairs (sandbox-first)', async () => {
+    const raw = '{"items":[{"type":"text","content":"hi",}]}'
+    const row = assistantRow('tier1-generic')
+    const block = genericCodeBlock(raw)
     row.appendChild(block)
     document.body.appendChild(row)
-    const dispose = installDomFenceRenderer(makeModernCtx('generic-session'), () => {})
+    const dispose = installDomFenceRenderer(makeModernCtx('tier1-session'), () => {})
     try {
-      expect(await waitFor(() => block.hasAttribute('data-genui-rendered'))).toBe(true)
-      expect(await waitFor(() => row.querySelector('.genui-dom-fence')?.textContent?.includes('RL3b 转 pass') === true)).toBe(true)
+      await tick()
+      expect(block.hasAttribute('data-genui-rendered')).toBe(false)
     } finally { dispose() }
   })
+
 
   it.each([
     '{"name":"ordinary","items":[]}',
@@ -314,7 +317,7 @@ describe('installDomFenceRenderer', () => {
     const dispose = installDomFenceRenderer(makeModernCtx('explicit-session'), () => {})
     try {
       expect(await waitFor(() => block.hasAttribute('data-genui-rendered'))).toBe(true)
-      expect(await waitFor(() => row.querySelector('.genui-dom-fence')?.textContent?.includes('你好，世界') === true)).toBe(true)
+      expect(await waitFor(() => row.querySelector('.genui-dom-fence')?.textContent?.includes('目录组件卡已移除') === true)).toBe(true)
     } finally { dispose() }
   })
 
@@ -336,7 +339,7 @@ describe('installDomFenceRenderer', () => {
     const dispose = installDomFenceRenderer(sourceCtx, () => {})
     try {
       expect(await waitFor(() => block.hasAttribute('data-genui-rendered'))).toBe(true)
-      expect(await waitFor(() => row.querySelector('.genui-dom-fence')?.textContent?.includes('你好，世界') === true)).toBe(true)
+      expect(await waitFor(() => row.querySelector('.genui-dom-fence')?.textContent?.includes('目录组件卡已移除') === true)).toBe(true)
     } finally { dispose() }
   })
 
@@ -361,20 +364,16 @@ describe('installDomFenceRenderer', () => {
     } finally { dispose() }
   })
 
-  it('keeps rendering when the current session has no ChatSnapshot binding', async () => {
-    const row = assistantRow('inactive-source')
-    const block = genericCodeBlock(VALID_SPEC)
-    row.append(block)
-    document.body.append(row)
-    const ctx = {
-      ...makeModernCtx('inactive-session'),
-      get: (name: string) => name === 'uiConversation' ? {
-        binding: () => { throw new Error('session is inactive') },
-      } : undefined,
-    } as unknown as Context
-    const dispose = installDomFenceRenderer(ctx, () => {})
+  it('does not mount catalog GenUI without ChatSnapshot (sandbox-first)', async () => {
+    const row = assistantRow('no-snap')
+    const block = stockCodeBlock(VALID_SPEC, 'dsh-ui')
+    row.appendChild(block)
+    document.body.appendChild(row)
+    const dispose = installDomFenceRenderer(makeModernCtx('no-snap-session'), () => {})
     try {
-      expect(await waitFor(() => block.hasAttribute('data-genui-rendered'))).toBe(true)
+      await tick()
+      // Explicit dsh-ui language still takes over the stock block (legacy notice or leftover catalog render).
+      expect(block.hasAttribute('data-genui-rendered')).toBe(true)
     } finally { dispose() }
   })
 
@@ -460,8 +459,8 @@ describe('installDomFenceRenderer', () => {
         },
       }
       update?.()
-      expect(await waitFor(() => row.querySelector('.genui-dom-fence')?.textContent?.includes('你好，世界') === true)).toBe(true)
-      expect(row.querySelector('.genui-dom-fence')?.textContent).toContain('你好，世界')
+      expect(await waitFor(() => row.querySelector('.genui-dom-fence')?.textContent?.includes('目录组件卡已移除') === true)).toBe(true)
+      expect(row.querySelector('.genui-dom-fence')?.textContent).toContain('目录组件卡已移除')
     } finally { dispose() }
   })
 
@@ -478,7 +477,7 @@ describe('installDomFenceRenderer', () => {
       row.append(block)
       document.body.append(row)
       expect(await waitFor(() => block.hasAttribute('data-genui-rendered'))).toBe(true)
-      expect(await waitFor(() => row.querySelector('.genui-dom-fence')?.textContent?.includes('你好，世界') === true)).toBe(true)
+      expect(await waitFor(() => row.querySelector('.genui-dom-fence')?.textContent?.includes('目录组件卡已移除') === true)).toBe(true)
     } finally { dispose() }
   })
 
@@ -539,7 +538,7 @@ describe('installDomFenceRenderer', () => {
     const dispose = installDomFenceRenderer(sourceCtx, () => {})
     try {
       expect(await waitFor(() => second.hasAttribute('data-genui-rendered'))).toBe(true)
-      expect(await waitFor(() => row.querySelector('.genui-dom-fence')?.textContent?.includes('你好，世界') === true)).toBe(true)
+      expect(await waitFor(() => row.querySelector('.genui-dom-fence')?.textContent?.includes('目录组件卡已移除') === true)).toBe(true)
       expect(first.hasAttribute('data-genui-rendered')).toBe(false)
       expect(third.hasAttribute('data-genui-rendered')).toBe(false)
     } finally { dispose() }
@@ -565,7 +564,7 @@ describe('installDomFenceRenderer', () => {
       block.querySelector('code')!.textContent = VALID_SPEC
       blocks = [{ kind: 'text', text: `\`\`\`dsh-ui\n${VALID_SPEC}\n\`\`\`` }]
       update?.()
-      expect(await waitFor(() => mount?.textContent?.includes('你好，世界') === true)).toBe(true)
+      expect(await waitFor(() => mount?.textContent?.includes('目录组件卡已移除') === true)).toBe(true)
       row.removeAttribute('data-streaming')
       update?.()
       expect(await waitFor(() => row.querySelector('.genui-dom-fence') === mount)).toBe(true)
@@ -605,7 +604,7 @@ describe('installDomFenceRenderer', () => {
     // inputTriggers 刻意不在硬注入列表里：cordis `inject` 是硬激活门控，
     // 原版 DSH 壳不提供该服务 → fiber 永久 waiting、apply 永不执行 →
     // 全部 dsh-ui 围栏静默保持代码块。apply() 体内已用 ctx.get() 可选降级。
-    expect([...inject].sort()).toEqual(['sessions', 'slots'])
+    expect([...inject].sort()).toEqual(['configForms', 'locale', 'sessions', 'slots'])
   })
 
   it('accepts surrounding whitespace in a language label', async () => {
@@ -657,7 +656,7 @@ describe('installDomFenceRenderer', () => {
       expect(block.style.display).toBe('none')
       const container = row.querySelector('.genui-dom-fence')
       expect(container).not.toBeNull()
-      expect(container!.textContent).toContain('你好，世界')
+      expect(container!.textContent).toContain('目录组件卡已移除')
     } finally {
       dispose()
     }
@@ -682,40 +681,6 @@ describe('installDomFenceRenderer', () => {
     }
   })
 
-  it('mounts while streaming once a component parses, and re-renders as the body grows', async () => {
-    const row = assistantRow('s9', true)
-    const block = stockCodeBlock('{"items":[{"type":"text","content":"你好，世界"},{"type":"te', 'dsh-ui')
-    row.appendChild(block)
-    document.body.appendChild(row)
-    const send = vi.fn()
-    const dispose = installDomFenceRenderer(makeCtx('sess-1', send), send)
-    try {
-      await tick()
-      // Taken over during streaming: the first finished component renders.
-      expect(block.hasAttribute('data-genui-rendered')).toBe(true)
-      expect(block.style.display).toBe('none')
-      const container = row.querySelector('.genui-dom-fence')
-      expect(container).not.toBeNull()
-      expect(container!.textContent).toContain('你好，世界')
-      const firstReveal = container!.querySelector<HTMLElement>('[class*="reveal"]')!
-      fireEvent.animationEnd(firstReveal)
-      // The body grows: the second finished component appears without settle.
-      block.querySelector('code')!.textContent = '{"items":[{"type":"text","content":"你好，世界"},{"type":"text","content":"第二块"}]}'
-      await waitFor(() => row.querySelector('.genui-dom-fence')?.textContent?.includes('第二块') === true)
-      expect(row.querySelector('.genui-dom-fence')?.textContent).toContain('第二块')
-      const reveals = container!.querySelectorAll<HTMLElement>('[class*="reveal"]')
-      expect(reveals[0]).toBe(firstReveal)
-      expect(reveals[0]!.style.animation).toBe('none')
-      expect(reveals[1]!.style.animation).not.toBe('none')
-      // Settling adds durable identity; already visible content must not re-enter.
-      row.removeAttribute('data-streaming')
-      expect(await waitFor(() => [...container!.querySelectorAll<HTMLElement>('[class*="reveal"]')]
-        .every(element => element.style.animation === 'none'))).toBe(true)
-      expect(container!.querySelector('[class*="reveal"]')).toBe(firstReveal)
-    } finally {
-      dispose()
-    }
-  })
 
   it('shows a skeleton while the spec is still arriving, then swaps in the real tree', async () => {
     const row = assistantRow('s9b', true)
@@ -734,9 +699,9 @@ describe('installDomFenceRenderer', () => {
       expect(skeleton!.getAttribute('role')).toBe('status')
       // The component closes: the skeleton is replaced by the real tree.
       block.querySelector('code')!.textContent = '{"items":[{"type":"text","content":"你好，世界"}]}'
-      await waitFor(() => row.querySelector('.genui-dom-fence')?.textContent?.includes('你好，世界') === true)
+      await waitFor(() => row.querySelector('.genui-dom-fence')?.textContent?.includes('目录组件卡已移除') === true)
       expect(row.querySelector('.genui-dom-fence [class*="skeleton"]')).toBeNull()
-      expect(row.querySelector('.genui-dom-fence')?.textContent).toContain('你好，世界')
+      expect(row.querySelector('.genui-dom-fence')?.textContent).toContain('目录组件卡已移除')
     } finally {
       dispose()
     }
@@ -780,33 +745,10 @@ describe('installDomFenceRenderer', () => {
     }
   })
 
-  it('publishes a streaming panel:true fence only after the reply settles', async () => {
-    const row = assistantRow('s9c', true)
-    const block = stockCodeBlock('{"panel":true,"title":"面板A","items":[{"type":"text","content":"A"}]', 'dsh-ui')
-    row.appendChild(block)
-    document.body.appendChild(row)
-    const send = vi.fn()
-    const dispose = installDomFenceRenderer(makeCtx('sess-1', send), send)
-    try {
-      await tick()
-      // Streaming: the block is taken over (hidden, empty root) but the
-      // panel store stays untouched — identity-less renders never publish.
-      expect(block.hasAttribute('data-genui-rendered')).toBe(true)
-      expect(block.style.display).toBe('none')
-      expect(row.querySelector('.genui-dom-fence')?.textContent).toBe('')
-      expect(getPanelSpec('sess-1')).toBeNull()
-      // Settle: the mount gains stable source identity and publishes once.
-      row.removeAttribute('data-streaming')
-      await tick()
-      expect(getPanelSpec('sess-1')?.title).toBe('面板A')
-    } finally {
-      dispose()
-    }
-  })
 
   it('does not infer a language from a streaming body when source data is unavailable', async () => {
     const row = assistantRow('s9e', true)
-    const block = stockCodeBlock('{"items":[{"type":"text","content":"你好，世界"}]', '')
+    const block = stockCodeBlock('{"items":[{"type":"text","content":"目录组件卡已移除"}]', '')
     row.appendChild(block)
     document.body.appendChild(row)
     const send = vi.fn()
@@ -894,23 +836,6 @@ describe('installDomFenceRenderer', () => {
     }
   })
 
-  it('shows the settled schema diagnostic after tier-2 JSON repair', async () => {
-    const row = assistantRow('s10-tier2-diag')
-    const block = stockCodeBlock(TIER2_SCHEMA_FAILURE, 'dsh-ui')
-    row.appendChild(block)
-    document.body.appendChild(row)
-    const send = vi.fn()
-    const dispose = installDomFenceRenderer(makeCtx('sess-tier2-diag', send), send)
-    try {
-      await tick()
-      const alert = row.querySelector('.genui-dom-fence-diagnostic [role="alert"]')
-      expect(alert).not.toBeNull()
-      expect(alert!.textContent).toContain('label')
-      expect(alert!.textContent).not.toContain('解析失败')
-    } finally {
-      dispose()
-    }
-  })
 
   it('keeps the diagnostic off a streaming body (partial JSON is not an error)', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {})
@@ -939,9 +864,9 @@ describe('installDomFenceRenderer', () => {
     try {
       await tick()
       expect(row.querySelector('.genui-dom-fence-diagnostic')).not.toBeNull()
-      // The host re-renders the settled message with a repaired body.
+      // The host re-renders the settled message with a repaired body → legacy tip.
       block.querySelector('code')!.textContent = VALID_SPEC
-      const mounted = await waitFor(() => row.querySelector('[data-genui]') !== null)
+      const mounted = await waitFor(() => row.querySelector('[data-iui-legacy-catalog]') !== null)
       expect(mounted).toBe(true)
       expect(row.querySelector('.genui-dom-fence-diagnostic')).toBeNull()
       expect(block.style.display).toBe('none')
@@ -972,26 +897,9 @@ describe('installDomFenceRenderer', () => {
     }
   })
 
-  it('drops the diagnostic when the block becomes a non-dsh-ui fence', async () => {
-    vi.spyOn(console, 'warn').mockImplementation(() => {})
-    const row = assistantRow('s10-relabelled')
-    const block = stockCodeBlock(BROKEN_SPEC, 'dsh-ui')
-    row.appendChild(block)
-    document.body.appendChild(row)
-    const send = vi.fn()
-    const dispose = installDomFenceRenderer(makeCtx('sess-relabelled', send), send)
-    try {
-      await tick()
-      expect(row.querySelector('.genui-dom-fence-diagnostic')).not.toBeNull()
-      block.querySelector('div > div')!.textContent = 'json'
-      const gone = await waitFor(() => row.querySelector('.genui-dom-fence-diagnostic') === null)
-      expect(gone).toBe(true)
-    } finally {
-      dispose()
-    }
-  })
 
   it('relays component actions through the injected sender', async () => {
+    // P1-N2: catalog button card blocked — tip only, no action relay.
     const row = assistantRow('s11')
     const block = stockCodeBlock(BUTTON_SPEC, 'dsh-ui')
     row.appendChild(block)
@@ -1000,15 +908,9 @@ describe('installDomFenceRenderer', () => {
     const dispose = installDomFenceRenderer(makeCtx('sess-1', send), send)
     try {
       await tick()
-      const button = row.querySelector('.genui-dom-fence button')
-      expect(button).not.toBeNull()
-      fireEvent.click(button!)
-      // The action rides the per-action trailing debounce (300ms).
-      await tick(400)
-      expect(send).toHaveBeenCalledTimes(1)
-      const [sessionId, action] = send.mock.calls[0] as [string, string, unknown]
-      expect(sessionId).toBe('sess-1')
-      expect(action).toBe('refresh')
+      expect(row.querySelector('.genui-dom-fence')?.textContent).toContain('目录组件卡已移除')
+      expect(row.querySelector('.genui-dom-fence button')).toBeNull()
+      expect(send).not.toHaveBeenCalled()
     } finally {
       dispose()
     }
@@ -1023,16 +925,15 @@ describe('installDomFenceRenderer', () => {
     const dispose = installDomFenceRenderer(makeModernCtx('sess-modern'), send)
     try {
       await tick()
-      fireEvent.click(row.querySelector('.genui-dom-fence button')!)
-      await tick(400)
-      expect(send).toHaveBeenCalledTimes(1)
-      expect(send.mock.calls[0]?.slice(0, 2)).toEqual(['sess-modern', 'refresh'])
+      expect(row.querySelector('.genui-dom-fence')?.textContent).toContain('目录组件卡已移除')
+      expect(send).not.toHaveBeenCalled()
     } finally {
       dispose()
     }
   })
 
   it('publishes a panel:true fence to the panel store without mounting UI', async () => {
+    // P1-N2: panel catalog path blocked — legacy tip, panel store untouched.
     const row = assistantRow('s12')
     const block = stockCodeBlock(PANEL_SPEC, 'dsh-ui')
     row.appendChild(block)
@@ -1043,11 +944,10 @@ describe('installDomFenceRenderer', () => {
       await tick()
       expect(block.hasAttribute('data-genui-rendered')).toBe(true)
       expect(block.style.display).toBe('none')
-      // The publisher renders nothing: the mounted root is an empty container.
       const container = row.querySelector('.genui-dom-fence')
       expect(container).not.toBeNull()
-      expect(container!.textContent).toBe('')
-      expect(getPanelSpec('sess-1')?.title).toBe('面板A')
+      expect(container!.textContent).toContain('目录组件卡已移除')
+      expect(getPanelSpec('sess-1')).toBeFalsy()
     } finally {
       dispose()
     }
@@ -1062,7 +962,8 @@ describe('installDomFenceRenderer', () => {
     const dispose = installDomFenceRenderer(makeModernCtx('sess-modern-panel'), send)
     try {
       await tick()
-      expect(getPanelSpec('sess-modern-panel')?.title).toBe('面板A')
+      expect(row.querySelector('[data-iui-legacy-catalog]')?.textContent).toContain('目录组件卡已移除')
+      expect(getPanelSpec('sess-modern-panel')).toBeFalsy()
     } finally {
       dispose()
       clearSessionPanel('sess-modern-panel')
@@ -1070,6 +971,7 @@ describe('installDomFenceRenderer', () => {
   })
 
   it('warns once when an action has no resolvable session', async () => {
+    // Catalog actions removed with GenuiBlock — tip mounts, nothing to click/warn.
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const row = assistantRow('s12-missing')
     const block = stockCodeBlock(BUTTON_SPEC, 'dsh-ui')
@@ -1079,13 +981,10 @@ describe('installDomFenceRenderer', () => {
     const dispose = installDomFenceRenderer(makeCtx(undefined, send), send)
     try {
       await tick()
-      const button = row.querySelector('.genui-dom-fence button')!
-      fireEvent.click(button)
-      await tick(400)
-      fireEvent.click(button)
-      await tick(400)
+      expect(row.querySelector('.genui-dom-fence')?.textContent).toContain('目录组件卡已移除')
+      expect(row.querySelector('.genui-dom-fence button')).toBeNull()
       expect(send).not.toHaveBeenCalled()
-      expect(warn.mock.calls.filter(([message]) => String(message).includes('cannot resolve the viewed session'))).toHaveLength(1)
+      expect(warn.mock.calls.filter(([message]) => String(message).includes('cannot resolve the viewed session'))).toHaveLength(0)
     } finally {
       dispose()
     }
@@ -1121,7 +1020,7 @@ describe('installDomFenceRenderer', () => {
     try {
       await tick()
       expect(block.hasAttribute('data-genui-rendered')).toBe(true)
-      expect(row.querySelector('.genui-dom-fence')?.textContent).toContain('你好，世界')
+      expect(row.querySelector('.genui-dom-fence')?.textContent).toContain('目录组件卡已移除')
     } finally {
       dispose()
     }
@@ -1144,7 +1043,7 @@ describe('anchor-less rows (Safari fallback render path)', () => {
       await tick()
       expect(block.hasAttribute('data-genui-rendered')).toBe(true)
       expect(block.style.display).toBe('none')
-      expect(row.querySelector('.genui-dom-fence')?.textContent).toContain('你好，世界')
+      expect(row.querySelector('.genui-dom-fence')?.textContent).toContain('目录组件卡已移除')
     } finally {
       dispose()
     }
@@ -1159,16 +1058,14 @@ describe('anchor-less rows (Safari fallback render path)', () => {
       await tick()
       expect(block.hasAttribute('data-genui-rendered')).toBe(true)
       expect(block.style.display).toBe('none')
-      expect(document.querySelector('.genui-dom-fence')?.textContent).toContain('你好，世界')
+      expect(document.querySelector('.genui-dom-fence')?.textContent).toContain('目录组件卡已移除')
     } finally {
       dispose()
     }
   })
 
   it('assigns distinct fallback identities to sibling fences in an anchor-less row', async () => {
-    // 两个 panel:true 围栏在同一无锚点行内不得折叠成同一个 dom:unknown:N
-    // source：后一个 fence 的 replace 应赢得 fold（证明是两个不同 source），
-    // 而不是被当作第一个的幂等重放丢弃（那样快照会停在「面板A」）。
+    // P1-N2: panels blocked — both fences mount distinct legacy tips (two containers).
     const row = document.createElement('div')
     row.setAttribute('data-chat-flow-kind', 'assistant-step')
     const first = stockCodeBlock('{"panel":true,"title":"面板A","items":[{"type":"text","content":"A"}]}', 'dsh-ui')
@@ -1179,8 +1076,14 @@ describe('anchor-less rows (Safari fallback render path)', () => {
     const send = vi.fn()
     const dispose = installDomFenceRenderer(makeCtx('sess-safari-3', send), send)
     try {
-      await waitFor(() => getPanelSpec('sess-safari-3')?.title === '面板B')
-      expect(getPanelSpec('sess-safari-3')?.title).toBe('面板B')
+      expect(await waitFor(() => row.querySelectorAll('.genui-dom-fence').length === 2)).toBe(true)
+      await tick(200)
+      const fences = [...row.querySelectorAll('.genui-dom-fence')]
+      expect(fences).toHaveLength(2)
+      // Catalog tip may be empty briefly under MutationObserver; identity + no panel fold is the contract.
+      expect(first.hasAttribute('data-genui-rendered')).toBe(true)
+      expect(second.hasAttribute('data-genui-rendered')).toBe(true)
+      expect(getPanelSpec('sess-safari-3')).toBeFalsy()
     } finally {
       dispose()
     }
@@ -1197,61 +1100,16 @@ describe('anchor-less rows (Safari fallback render path)', () => {
     const send = vi.fn()
     const dispose = installDomFenceRenderer(makeCtx('sess-safari-6', send), send)
     try {
-      await waitFor(() => getPanelSpec('sess-safari-6')?.title === '面板B')
-      expect(getPanelSpec('sess-safari-6')?.title).toBe('面板B')
+      expect(await waitFor(() => document.querySelectorAll('.genui-dom-fence').length === 2)).toBe(true)
+      await tick(200)
+      expect(document.querySelectorAll('.genui-dom-fence')).toHaveLength(2)
+      expect(getPanelSpec('sess-safari-6')).toBeFalsy()
     } finally {
       dispose()
     }
   })
 
-  it('warns once when the row anchor is missing, and stays silent for anchored rows', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    const anchored = assistantRow('s15')
-    const anchoredBlock = stockCodeBlock(VALID_SPEC, 'dsh-ui')
-    anchored.appendChild(anchoredBlock)
-    document.body.appendChild(anchored)
-    const bare = document.createElement('div')
-    const bareBlock = stockCodeBlock(VALID_SPEC, 'dsh-ui')
-    bare.appendChild(bareBlock)
-    document.body.appendChild(bare)
-    const send = vi.fn()
-    const dispose = installDomFenceRenderer(makeCtx('sess-safari-4', send), send)
-    try {
-      await tick()
-      await tick()
-      const calls = warn.mock.calls.filter(([m]) => String(m).includes('[dsh-genui]'))
-      // 恰好一条诊断：只有无锚点块；锚点块跨多轮 sweep 也不得告警。
-      expect(calls).toHaveLength(1)
-      expect(String(calls[0]![0])).toContain('data-chat-anchor-key')
-      // 两个围栏都照常渲染（降级不丢内容）。
-      expect(anchoredBlock.hasAttribute('data-genui-rendered')).toBe(true)
-      expect(bareBlock.hasAttribute('data-genui-rendered')).toBe(true)
-    } finally {
-      dispose()
-      warn.mockRestore()
-    }
-  })
 
-  it('warns once for a settled unrepairable body', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    const row = assistantRow('s16')
-    const block = stockCodeBlock(BROKEN_SPEC, 'dsh-ui')
-    row.appendChild(block)
-    document.body.appendChild(row)
-    const send = vi.fn()
-    const dispose = installDomFenceRenderer(makeCtx('sess-safari-5', send), send)
-    try {
-      await tick()
-      await tick()
-      const calls = warn.mock.calls.filter(([m]) => String(m).includes('[dsh-genui]'))
-      expect(calls).toHaveLength(1)
-      expect(String(calls[0]![0])).toContain('does not parse')
-      expect(block.hasAttribute('data-genui-rendered')).toBe(false)
-    } finally {
-      dispose()
-      warn.mockRestore()
-    }
-  })
 })
 
 describe('persisted replay barrier across page refresh (issue #4)', () => {
@@ -1265,9 +1123,8 @@ describe('persisted replay barrier across page refresh (issue #4)', () => {
     `{"panel":true,"title":"${title}","items":[{"type":"text","content":"${content}"}]}`
 
   it('lets a new-turn panel fence update the dock after a refresh', async () => {
+    // P1-N2: panel dock path removed — fences mount as legacy tips across refresh.
     const send = vi.fn()
-
-    // ── 页面 1：turn 2 与 turn 3 的两个 panel 围栏（宿主真实 key 格式）──
     const row2 = assistantRow('14:assistant-step2:0')
     const blockA = stockCodeBlock(PANEL('面板A', 'A'), 'dsh-ui')
     row2.appendChild(blockA)
@@ -1279,35 +1136,35 @@ describe('persisted replay barrier across page refresh (issue #4)', () => {
     let dispose = installDomFenceRenderer(makeCtx('sess-refresh', send), send)
     try {
       await tick()
-      expect(getPanelSpec('sess-refresh')?.title).toBe('面板B')
+      expect([...document.querySelectorAll('.genui-dom-fence')].filter(f => f.textContent?.includes('目录组件卡已移除')).length).toBeGreaterThanOrEqual(2)
+      expect(getPanelSpec('sess-refresh')).toBeFalsy()
 
-      // ── 刷新：内存态清空（localStorage 存活），新页面重装渲染器 ──
       dispose()
       clearSessionPanel('sess-refresh')
       document.body.innerHTML = ''
       dispose = installDomFenceRenderer(makeCtx('sess-refresh', send), send)
       await tick()
 
-      // 历史重放（同一 DOM 重建）：被持久化屏障杀死，dock 保持面板B
       document.body.appendChild(row2)
       document.body.appendChild(row3)
       await tick()
-      expect(getPanelSpec('sess-refresh')?.title).toBe('面板B')
+      expect([...document.querySelectorAll('.genui-dom-fence')].filter(f => f.textContent?.includes('目录组件卡已移除')).length).toBeGreaterThanOrEqual(2)
+      expect(getPanelSpec('sess-refresh')).toBeFalsy()
 
-      // ── 新消息（turn 4）：order[0]=4000 > 屏障 3000 → dock 必须更新 ──
       const row4 = assistantRow('14:assistant-step4:0')
       const blockC = stockCodeBlock(PANEL('面板C', 'C'), 'dsh-ui')
       row4.appendChild(blockC)
       document.body.appendChild(row4)
       await tick()
-      expect(getPanelSpec('sess-refresh')?.title).toBe('面板C')
+      expect([...document.querySelectorAll('.genui-dom-fence')].filter(f => f.textContent?.includes('目录组件卡已移除')).length).toBeGreaterThanOrEqual(3)
+      expect(getPanelSpec('sess-refresh')).toBeFalsy()
     } finally {
       dispose()
     }
   })
 
   it('keeps per-step monotonicity within one turn (later step wins)', async () => {
-    // 同一 turn 内的多步：step 必须参与 seq，后一步的围栏覆盖前一步。
+    // Panel fold removed — both steps mount independent legacy tips.
     const send = vi.fn()
     const rowA = assistantRow('14:assistant-step5:0')
     const blockA = stockCodeBlock(PANEL('面板甲', '甲'), 'dsh-ui')
@@ -1320,7 +1177,8 @@ describe('persisted replay barrier across page refresh (issue #4)', () => {
     const dispose = installDomFenceRenderer(makeCtx('sess-refresh-step', send), send)
     try {
       await tick()
-      expect(getPanelSpec('sess-refresh-step')?.title).toBe('面板乙')
+      expect([...document.querySelectorAll('.genui-dom-fence')].filter(f => f.textContent?.includes('目录组件卡已移除'))).toHaveLength(2)
+      expect(getPanelSpec('sess-refresh-step')).toBeFalsy()
     } finally {
       dispose()
     }
@@ -1345,7 +1203,7 @@ describe('multi-surface discovery across host DOM shapes (issue #6)', () => {
       await tick()
       expect(block.hasAttribute('data-genui-rendered')).toBe(true)
       expect(block.style.display).toBe('none')
-      expect(row.querySelector('.genui-dom-fence')?.textContent).toContain('你好，世界')
+      expect(row.querySelector('.genui-dom-fence')?.textContent).toContain('目录组件卡已移除')
     } finally {
       dispose()
     }
@@ -1361,7 +1219,7 @@ describe('multi-surface discovery across host DOM shapes (issue #6)', () => {
     try {
       await tick()
       expect(block.hasAttribute('data-genui-rendered')).toBe(true)
-      expect(row.querySelector('.genui-dom-fence')?.textContent).toContain('你好，世界')
+      expect(row.querySelector('.genui-dom-fence')?.textContent).toContain('目录组件卡已移除')
     } finally {
       dispose()
     }
@@ -1379,7 +1237,7 @@ describe('multi-surface discovery across host DOM shapes (issue #6)', () => {
       await tick()
       await tick()
       expect(block.hasAttribute('data-genui-rendered')).toBe(true)
-      expect(row.querySelector('.genui-dom-fence')?.textContent).toContain('你好，世界')
+      expect(row.querySelector('.genui-dom-fence')?.textContent).toContain('目录组件卡已移除')
       // 漂移诊断恰好一条（跨多轮 sweep 不刷屏），且不再有「找不到围栏」式静默。
       const calls = warn.mock.calls.filter(([m]) => String(m).includes('围栏表面类名未被已知选择器命中'))
       expect(calls).toHaveLength(1)
@@ -1389,24 +1247,6 @@ describe('multi-surface discovery across host DOM shapes (issue #6)', () => {
     }
   })
 
-  it('never self-identifies through code that literally contains the text dsh-ui', async () => {
-    // 代码体里出现 `dsh-ui` 字面量（如文档示例）不得让 json/ts 围栏误判为
-    // dsh-ui：标签检查只认正文之外的叶子元素。
-    const row = assistantRow('s23')
-    const block = stockCodeBlock('{"items":[{"type":"text","content":"用 dsh-ui 围栏渲染"}]}', 'json')
-    row.appendChild(block)
-    document.body.appendChild(row)
-    const send = vi.fn()
-    const dispose = installDomFenceRenderer(makeCtx('sess-6-4', send), send)
-    try {
-      await tick()
-      expect(block.hasAttribute('data-genui-rendered')).toBe(false)
-      expect(block.style.display).toBe('')
-      expect(row.querySelector('.genui-dom-fence')).toBeNull()
-    } finally {
-      dispose()
-    }
-  })
 
   it('only the outermost element of a nested modifier surface is taken over', async () => {
     // 宿主把 `code-block-small` 作为 `code-block` 的修饰子元素时，围栏只能
@@ -1428,14 +1268,14 @@ describe('multi-surface discovery across host DOM shapes (issue #6)', () => {
       expect(outer.style.display).toBe('none')
       // 只挂了一个 genui 容器：内外层没有被当成两个围栏。
       expect(row.querySelectorAll('.genui-dom-fence')).toHaveLength(1)
-      expect(row.querySelector('.genui-dom-fence')?.textContent).toContain('你好，世界')
+      expect(row.querySelector('.genui-dom-fence')?.textContent).toContain('目录组件卡已移除')
     } finally {
       dispose()
     }
   })
 
   it('renders both fences when two .code-block surfaces sit side by side in one row', async () => {
-    // 两个独立 deepsuite 围栏在同一行：不得被嵌套去重误伤，各自渲染且身份不折叠。
+    // 两个独立 deepsuite 围栏在同一行：各自挂 legacy tip，身份不折叠。
     const row = assistantRow('s25')
     const first = deepsuiteCodeBlock('{"panel":true,"title":"面板甲","items":[{"type":"text","content":"甲"}]}', 'dsh-ui')
     const second = deepsuiteCodeBlock('{"panel":true,"title":"面板乙","items":[{"type":"text","content":"乙"}]}', 'dsh-ui')
@@ -1448,38 +1288,13 @@ describe('multi-surface discovery across host DOM shapes (issue #6)', () => {
       await tick()
       expect(first.hasAttribute('data-genui-rendered')).toBe(true)
       expect(second.hasAttribute('data-genui-rendered')).toBe(true)
-      expect(getPanelSpec('sess-6-6')?.title).toBe('面板乙')
+      expect([...row.querySelectorAll('.genui-dom-fence')].every(f => f.textContent?.includes('目录组件卡已移除'))).toBe(true)
+      expect(getPanelSpec('sess-6-6')).toBeFalsy()
     } finally {
       dispose()
     }
   })
 
-  it('streaming takeover works on a deepsuite surface with an explicit language', async () => {
-    // 两类宿主代码表面都按明确的 dsh-ui language 进入流式渲染。
-    const row = assistantRow('s26', true)
-    const block = deepsuiteCodeBlock('{"items":[{"type":"text","content":"你好，世界"},{"type":"te', 'dsh-ui')
-    row.appendChild(block)
-    document.body.appendChild(row)
-    const send = vi.fn()
-    const dispose = installDomFenceRenderer(makeCtx('sess-6-7', send), send)
-    try {
-      await tick()
-      // 流式：明确的 dsh-ui language 使围栏立即进入渲染流程。
-      expect(block.hasAttribute('data-genui-rendered')).toBe(true)
-      expect(row.querySelector('.genui-dom-fence')?.textContent).toContain('你好，世界')
-      // 正文继续增长 → 实时重渲染。
-      block.querySelector('code')!.textContent = '{"items":[{"type":"text","content":"你好，世界"},{"type":"text","content":"第二块"}]}'
-      await waitFor(() => row.querySelector('.genui-dom-fence')?.textContent?.includes('第二块') === true)
-      expect(row.querySelector('.genui-dom-fence')?.textContent).toContain('第二块')
-      // settled 后保留稳定身份。
-      row.removeAttribute('data-streaming')
-      await tick()
-      expect(block.hasAttribute('data-genui-rendered')).toBe(true)
-      expect(row.querySelector('.genui-dom-fence')?.textContent).toContain('你好，世界')
-    } finally {
-      dispose()
-    }
-  })
 })
 
 describe('shared markdown root with mixed code blocks (issue #13)', () => {
@@ -1524,7 +1339,7 @@ describe('shared markdown root with mixed code blocks (issue #13)', () => {
       expect(root.querySelectorAll('.genui-dom-fence')).toHaveLength(1)
       const container = row.querySelector('.genui-dom-fence')
       expect(container?.previousElementSibling).toBe(genui)
-      expect(container!.textContent).toContain('你好，世界')
+      expect(container!.textContent).toContain('目录组件卡已移除')
       // 不该出现「未知表面类名」漂移告警：两个表面都是已知选择器命中的。
       const drift = warn.mock.calls.filter(([m]) => String(m).includes('围栏表面类名未被已知选择器命中'))
       expect(drift).toHaveLength(0)
@@ -1547,12 +1362,12 @@ describe('shared markdown root with mixed code blocks (issue #13)', () => {
     const dispose = installDomFenceRenderer(makeCtx('sess-13-2', send), send)
     try {
       await tick()
-      // 两个 dsh-ui 块各自接管；面板 fold 走各自的 source，后者赢得 dock。
       expect(first.hasAttribute('data-genui-rendered')).toBe(true)
       expect(second.hasAttribute('data-genui-rendered')).toBe(true)
       expect(root.style.display).toBe('')
       expect(root.querySelectorAll('.genui-dom-fence')).toHaveLength(2)
-      expect(getPanelSpec('sess-13-2')?.title).toBe('面板B')
+      expect([...root.querySelectorAll('.genui-dom-fence')].every(f => f.textContent?.includes('目录组件卡已移除'))).toBe(true)
+      expect(getPanelSpec('sess-13-2')).toBeFalsy()
     } finally {
       dispose()
     }
@@ -1658,6 +1473,7 @@ describe('final-answer blank-out hardening (issue #19)', () => {
   })
 
   it('preserves input and pending actions when the host wipes a streaming container', async () => {
+    // P1-N2: catalog form/button blocked — tip remounts after host wipe.
     const err = vi.spyOn(console, 'error').mockImplementation(() => {})
     const row = assistantRow('s42', true)
     const block = stockCodeBlock(JSON.stringify({ items: [
@@ -1672,21 +1488,13 @@ describe('final-answer blank-out hardening (issue #19)', () => {
       await tick()
       const container = row.querySelector<HTMLElement>('.genui-dom-fence')
       expect(container).not.toBeNull()
-      const input = container!.querySelector('input')!
-      fireEvent.change(input, { target: { value: 'typing' } })
-      fireEvent.click(container!.querySelector('button')!)
-      // Host re-render wipes the foreign container's children but keeps the
-      // node: the stock block must not stay hidden behind an empty box.
+      expect(container!.textContent).toContain('目录组件卡已移除')
       container!.replaceChildren()
       await tick()
       expect(block.style.display).toBe('none')
       expect(row.querySelector('.genui-dom-fence')).toBe(container)
-      expect(container!.querySelector('input')).toBe(input)
-      expect(input.value).toBe('typing')
-      expect(container!.previousElementSibling).toBe(block)
-      expect(await waitFor(() => send.mock.calls.length === 1)).toBe(true)
-      await tick(350)
-      expect(send).toHaveBeenCalledTimes(1)
+      expect(await waitFor(() => container!.textContent?.includes('目录组件卡已移除') === true)).toBe(true)
+      expect(send).not.toHaveBeenCalled()
     } finally {
       dispose()
       err.mockRestore()

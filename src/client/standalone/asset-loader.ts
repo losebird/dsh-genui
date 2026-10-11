@@ -7,3 +7,12 @@ export function loadGenuiAsset<T>(name: 'mermaid' | 'three' | 'echarts-core' | '
   if (asset === undefined) return Promise.reject(new Error(`standalone asset '${name}' was not preloaded`))
   return Promise.resolve(asset as T)
 }
+
+/**
+ * Standalone builds have no plugin asset HTTP route. Callers that only need
+ * a URL string (e.g. runtime-config fetch) get a relative stub; fetch will
+ * fail soft and keep defaults (frameChannelMount stays true).
+ */
+export function assetUrl(file: string): string {
+  return `./iui-assets/${file.replace(/^\/+/, '')}`
+}

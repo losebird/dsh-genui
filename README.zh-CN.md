@@ -14,6 +14,10 @@
 >
 > 🔌 生态：仓库已挂 `#dsh` · `#dsh-plugin` topic，欢迎 @dsh-plugin 收录。
 
+
+> **IUI fork（`@losebird/iui`）默认路径：** dsh → 模型（如 Muse Spark / 任意 OpenAI 兼容）→ 插件软约束 → **```iui-html** 自由 HTML/CSS/JS 沙箱（流式：css → html → js）。**无**目录 pack、**无**同进程 Gateway/DIL、**不**把 `:3101`/vLLM 当默认路径。见 [docs/REDESIGN-SANDBOX-FIRST.zh-CN.md](./docs/REDESIGN-SANDBOX-FIRST.zh-CN.md)、[ARCHITECTURE.md](./ARCHITECTURE.md)、[docs/SETTINGS.md](./docs/SETTINGS.md)。
+
+
 `dsh-genui` 把模型回答变成**安全、可交互的 DSH 界面**。你问「这个月订单怎么样」，回答除了文字，还可以直接带上可排序的数据面板、原生音视频、可拖动的函数图、本地判题或常驻会话面板。
 
 ## 先看真实证据

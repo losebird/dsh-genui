@@ -29,6 +29,12 @@ export interface GenuiBlockProps {
   stateKey?: string | undefined
   /** Animate newly arriving items; settled message replays opt out. */
   animateEntrance?: boolean | undefined
+  /** True while the host message is still streaming — enables per-node progressive mount tail. */
+  streaming?: boolean | undefined
+  /** IR / instance-store handle — wires mount to frame channel + replay. */
+  instanceId?: string | undefined
+  /** Session scope for frame SSE / store fan-out. */
+  sessionId?: string | undefined
   /** Native hosts own durable state instead of the browser store. Read once per stateKey. */
   initialState?: BlockInteractionState | undefined
   onStateChange?: ((state: BlockInteractionState) => void) | undefined

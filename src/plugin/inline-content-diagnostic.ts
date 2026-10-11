@@ -69,7 +69,7 @@ export function collectInlineContentWarnings(spec: GenuiSpec): InlineContentWarn
         break
       case 'radio':
         check(node.label, `${path}.label`)
-        node.options.forEach((option, i) => check(option, `${path}.options[${i}]`))
+        node.options.forEach((option, i) => check(typeof option === 'string' ? option : option.label, `${path}.options[${i}]`))
         if (typeof node.answer === 'string') check(node.answer, `${path}.answer`)
         check(node.explanation, `${path}.explanation`)
         break

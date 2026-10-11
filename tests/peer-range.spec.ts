@@ -21,8 +21,8 @@ const versionCases = [
 ] as const
 
 describe('DSH peer version ranges', () => {
-  it('covers all 17 DSH packages', () => {
-    expect(dshPeers).toHaveLength(17)
+  it('covers all 19 DSH packages', () => {
+    expect(dshPeers).toHaveLength(19)
   })
 
   it.each(versionCases)('%s support matches every DSH peer range', (version, expected) => {

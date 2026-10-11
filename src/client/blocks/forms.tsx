@@ -11,7 +11,15 @@ import { useT } from '../i18n/index.ts'
 import { resolveSubmitState } from '../submission-registry.ts'
 import type { RadioSubmissionMember } from '../submission-registry.ts'
 import type { AnswersState, GenuiBlockProps } from './state.ts'
-import type { GenuiInput, GenuiRadio, GenuiSelect, GenuiSlider, GenuiSubmit, GenuiSwitch, GenuiTextarea } from '../spec.ts'
+import type { GenuiInput, GenuiRadio, GenuiRadioOption, GenuiSelect, GenuiSlider, GenuiSubmit, GenuiSwitch, GenuiTextarea } from '../spec.ts'
+
+function radioOptionLabel(opt: GenuiRadioOption): string {
+  return typeof opt === 'string' ? opt : opt.label
+}
+
+function radioOptionDesc(opt: GenuiRadioOption): string | undefined {
+  return typeof opt === 'string' ? undefined : opt.desc
+}
 
 export function RadioNode({ node, onAction, answers }: {
   node: GenuiRadio
@@ -28,8 +36,9 @@ export function RadioNode({ node, onAction, answers }: {
   // (restored from localStorage) wins over both. The parent key includes the
   // reset round, so 重新作答 remounts this radio with a clean selection —
   // no sync effect needed.
+  const labels = options.map(radioOptionLabel)
   const restoredIndex = group !== undefined && answers?.answers[group] !== undefined
-    ? options.indexOf(answers!.answers[group]!)
+    ? labels.indexOf(answers!.answers[group]!)
     : -1
   const [selected, setSelected] = useState<number | null>(restoredIndex >= 0 ? restoredIndex : (node.selected ?? null))
   const uid = useId()
@@ -39,33 +48,75 @@ export function RadioNode({ node, onAction, answers }: {
     // A model-provided default selection IS the answer — but only when the
     // group has no durable answer yet (a restored user choice must win).
     if (node.selected !== undefined && options[node.selected] !== undefined && answers?.answers[group] === undefined) {
-      answers?.setAnswer(group, options[node.selected]!)
+      answers?.setAnswer(group, radioOptionLabel(options[node.selected]!))
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [group, node.label, node.answer, node.explanation, node.options, node.selected])
+  const segmented = node.layout === 'segmented'
+  if (segmented) {
+    return (
+      <div className={css.field} role="radiogroup" aria-label={node.label}>
+        {node.label !== undefined && <span className={css.fieldLabel}>{renderInline(node.label, false)}</span>}
+        <div style={{ display: 'inline-flex', borderRadius: 999, padding: 3, background: 'var(--dsl-g-tint, #f4f4f5)', gap: 2 }}>
+          {options.map((opt, i) => {
+            const label = radioOptionLabel(opt)
+            const active = selected === i
+            return (
+              <button
+                key={i}
+                type="button"
+                role="radio"
+                aria-checked={active}
+                disabled={locked}
+                style={{
+                  appearance: 'none', border: 'none', cursor: locked ? 'not-allowed' : 'pointer', font: 'inherit',
+                  fontSize: 13, fontWeight: 500, padding: '6px 14px', borderRadius: 999,
+                  background: active ? 'var(--dsl-g-surface, #fff)' : 'transparent',
+                  boxShadow: active ? '0 1px 2px rgba(0,0,0,.08)' : 'none',
+                }}
+                onClick={() => {
+                  setSelected(i)
+                  if (grouped) answers?.setAnswer(group, label)
+                  else if (action !== undefined && onAction !== undefined) onAction(action, { type: 'radio', value: label })
+                }}
+              >
+                {renderInline(label, false)}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
   return (
     <div className={css.fieldGroup} role="radiogroup" aria-label={node.label}>
       {node.label !== undefined && <span className={css.fieldLabel}>{renderInline(node.label, false)}</span>}
-      {options.map((opt, i) => (
-        <label key={i} className={css.radio}>
-          <input
-            type="radio"
-            name={`genui-radio-${uid}`}
-            checked={selected === i}
-            disabled={locked}
-            onChange={() => {
-              setSelected(i)
-              if (grouped) {
-                // Aggregation mode: record, do NOT round-trip per click.
-                answers?.setAnswer(group, opt)
-              } else if (action !== undefined && onAction !== undefined) {
-                onAction(action, { type: 'radio', value: opt })
-              }
-            }}
-          />
-          <span>{renderInline(opt, false)}</span>
-        </label>
-      ))}
+      {options.map((opt, i) => {
+        const label = radioOptionLabel(opt)
+        const desc = radioOptionDesc(opt)
+        return (
+          <label key={i} className={css.radio}>
+            <input
+              type="radio"
+              name={`genui-radio-${uid}`}
+              checked={selected === i}
+              disabled={locked}
+              onChange={() => {
+                setSelected(i)
+                if (grouped) {
+                  answers?.setAnswer(group, label)
+                } else if (action !== undefined && onAction !== undefined) {
+                  onAction(action, { type: 'radio', value: label })
+                }
+              }}
+            />
+            <span>
+              <span>{renderInline(label, false)}</span>
+              {desc !== undefined && <span className={css.fieldHint} style={{ display: 'block', marginTop: 2 }}>{renderInline(desc, false)}</span>}
+            </span>
+          </label>
+        )
+      })}
     </div>
   )
 }
@@ -212,7 +263,9 @@ export function SwitchNode({ node, onAction }: { node: GenuiSwitch; onAction?: G
         onClick={() => {
           const next = !on
           setOn(next)
-          if (action !== undefined && onAction !== undefined) onAction(action, { type: 'switch', checked: next })
+          // local:true or missing action → no model round-trip
+          if (node.local === true || action === undefined) return
+          if (onAction !== undefined) onAction(action, { type: 'switch', checked: next })
         }}
       >
         <span className={css.switchKnob} />
@@ -246,7 +299,9 @@ export function SliderNode({ node, onAction, answers }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   const send = (v: number): void => {
-    if (action !== undefined && onAction !== undefined) {
+    // local:true or missing action → field updates only (valueFrom consumers)
+    if (node.local === true || action === undefined) return
+    if (onAction !== undefined) {
       onAction(action, { type: 'slider', value: v, ...(id !== undefined ? { id } : {}) })
     }
   }

@@ -13,6 +13,7 @@ vi.mock('@deepseek-ai/dsh-client-ui-primitives', async () => ({
     return () => { registry.delete(lang) }
   },
 }))
+vi.mock('../src/client/settings/index.ts', () => ({ installIuiSettings: () => () => {} }))
 vi.mock('../src/client/achievement-toast.tsx', () => ({ mountAchievementToasts: () => () => {} }))
 vi.mock('../src/client/i18n/index.ts', async () => ({
   ...await vi.importActual('../src/client/i18n/index.ts'),
@@ -23,11 +24,11 @@ import { apply } from '../src/client/index.tsx'
 afterEach(() => { cleanup(); registry.clear() })
 
 describe('SVG registry integration', () => {
-  it('registers SVG alongside dsh-ui and disposes both', () => {
+  it('registers SVG alongside dsh-ui, iui and iui-html and disposes all', () => {
     const ctx = { slots: { inject: () => () => {} }, inject: () => {} } as unknown as Context
     const dispose = apply(ctx)
     try {
-      expect([...registry.keys()].sort()).toEqual(['dsh-ui', 'svg'])
+      expect([...registry.keys()].sort()).toEqual(['dsh-ui', 'iui', 'iui-html', 'svg'])
       const renderer = registry.get('svg')!
       const { getByRole } = render(<>{renderer('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 50"/>', 'svg')}</>)
       expect(getByRole('img')).not.toBeNull()

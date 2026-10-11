@@ -89,18 +89,20 @@ export function genuiTemplates(): readonly GenuiTemplate[] {
       instruction: t('tpl.compare.instruction'),
       demo: {
         title: t('tpl.compare.demo.title'),
+        gap: 10,
         items: [
           { type: 'callout', tone: 'info', title: t('tpl.compare.demo.conclusion'), content: t('tpl.compare.demo.body') },
-          { type: 'table', columns: [
-            t('tpl.compare.demo.dimension'),
-            t('tpl.compare.demo.optionA'),
-            t('tpl.compare.demo.optionB'),
-            t('tpl.compare.demo.optionC'),
-          ], rows: [
-            [t('tpl.compare.demo.cost'), t('tpl.compare.demo.high'), t('tpl.compare.demo.medium'), t('tpl.compare.demo.low')],
-            [t('tpl.compare.demo.complexity'), t('tpl.compare.demo.high'), t('tpl.compare.demo.medium'), t('tpl.compare.demo.low')],
-            [t('tpl.compare.demo.risk'), t('tpl.compare.demo.low'), t('tpl.compare.demo.low'), t('tpl.compare.demo.high')],
-            [t('tpl.compare.demo.payoff'), t('tpl.compare.demo.large'), t('tpl.compare.demo.medium'), t('tpl.compare.demo.small')],
+          { type: 'grid', cols: 2, items: [
+            { type: 'card', title: t('tpl.compare.demo.optionA'), items: [
+              { type: 'stat', label: t('tpl.compare.demo.cost'), value: t('tpl.compare.demo.high'), ring: 72 },
+              { type: 'stat', label: t('tpl.compare.demo.risk'), value: t('tpl.compare.demo.low'), ring: 22 },
+              { type: 'stat', label: t('tpl.compare.demo.payoff'), value: t('tpl.compare.demo.large'), ring: 80 },
+            ] },
+            { type: 'card', title: t('tpl.compare.demo.optionB'), items: [
+              { type: 'stat', label: t('tpl.compare.demo.cost'), value: t('tpl.compare.demo.medium'), ring: 48 },
+              { type: 'stat', label: t('tpl.compare.demo.risk'), value: t('tpl.compare.demo.low'), ring: 20 },
+              { type: 'stat', label: t('tpl.compare.demo.payoff'), value: t('tpl.compare.demo.medium'), ring: 55 },
+            ] },
           ] },
         ],
       },

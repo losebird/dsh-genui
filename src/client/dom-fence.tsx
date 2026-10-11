@@ -60,12 +60,11 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { GenuiActionContext, type GenuiActionHandler } from './action-context.ts'
 import css from './GenuiBlock.module.css'
 import { renderSvgFence } from './svg-fence.tsx'
+import { renderHtmlFence } from './html-fence.tsx'
 import { repairFenceJson, trimToBalancedRoot } from '../shared/fence-repair.ts'
+import { isJsonMasqueradingAsIui, looksLikeHtmlSandboxBody } from '../shared/genui-shape.ts'
 import { describeFenceFailure, FenceDiagnostic, renderResolvedFenceNode, type GenuiFenceContext } from './fence-render.tsx'
 import { resolveViewedSessionId } from './session-resolver.ts'
-import { validateCanonicalGenuiSpec } from './guard.ts'
-import { diagnoseUnknownGenuiFields } from './genui-runtime/diagnostics.ts'
-import { normalizeGenuiSpec } from './genui-runtime/normalize.ts'
 import { sourceFencesOfAssistant, sourceLanguageAt } from './source-fence.ts'
 
 /** Fence surfaces the channel can take over, newest host first: the shared
@@ -122,7 +121,7 @@ function isPanelRoot(node: ReactNode): boolean {
 
 /** Streaming placeholder gate: the body is a GenUI spec still arriving.
  *  Requires the shape of a spec (an object carrying items/type/title/panel) so
- *  a streaming ```json code block never gets a skeleton. */
+ *  Arbitrary ```json never gets a skeleton; GenUI-shaped ```json does (weak-model rescue). */
 function looksLikeGenuiInProgress(raw: string): boolean {
   const text = raw.trimStart()
   if (text.length < 8 || !text.startsWith('{')) return false
@@ -136,7 +135,10 @@ function looksLikeGenuiInProgress(raw: string): boolean {
  *  code block returns. */
 function GenuiSkeleton() {
   return (
-    <div className={css.skeleton} role="status" aria-label="正在生成界面">
+    <div className={css.skeleton} role="status" aria-label="正在生成界面" data-iui-stream="skeleton">
+      <div style={{ fontSize: 12, fontWeight: 600, color: 'hsl(240 3.8% 46%)', marginBottom: 8, letterSpacing: '-0.01em' }}>
+        正在生成交互界面…
+      </div>
       <span className={css.skeletonTitle} />
       <span className={css.skeletonBars}>
         <span style={{ width: '32%' }} />
@@ -154,7 +156,7 @@ interface Mount {
   block: HTMLElement
   lastRaw: string
   lastSettled: boolean
-  language: 'dsh-ui' | 'svg'
+  language: 'iui' | 'dsh-ui' | 'svg' | 'iui-html'
   lastNode: ReactNode
   /** True while this mount is the streaming skeleton (no component yet). */
   skeleton: boolean
@@ -165,15 +167,32 @@ function isTextNode(node: Node): node is Text {
 }
 
 /** 读取 DSH Desktop 0.11.0 将 dsh-ui 围栏呈现为纯文本标签时的正文。 */
+function isUiFenceLang(lang: string | null | undefined): lang is 'iui' | 'dsh-ui' {
+  return lang === 'iui' || lang === 'dsh-ui'
+}
+
+function isHtmlFenceLang(lang: string | null | undefined): lang is 'iui-html' {
+  return lang === 'iui-html'
+}
+
+/** Weak models emit ```json with a GenUI or sandbox body — treat as IUI for mount. */
+function isJsonAsIui(lang: string | null | undefined, raw: string): boolean {
+  return isJsonMasqueradingAsIui(lang, raw)
+}
+
 function tagTextBodyOf(block: Element): string | null {
   if (block.tagName !== 'SPAN' || block.childElementCount !== 0) return null
   const flowKind = block.closest('[data-chat-flow-kind]')?.getAttribute('data-chat-flow-kind')
   if (flowKind !== undefined && flowKind !== null && flowKind !== 'assistant-step') return null
   const text = block.textContent?.trim() ?? ''
-  const opening = '<dsh-ui>'
-  const closing = '</dsh-ui>'
-  if (!text.startsWith(opening) || !text.endsWith(closing)) return null
-  return text.slice(opening.length, -closing.length).trim()
+  for (const tag of ['iui', 'dsh-ui'] as const) {
+    const opening = `<${tag}>`
+    const closing = `</${tag}>`
+    if (text.startsWith(opening) && text.endsWith(closing)) {
+      return text.slice(opening.length, -closing.length).trim()
+    }
+  }
+  return null
 }
 
 /** The banner's language label: a leaf element whose text is exactly the
@@ -185,12 +204,12 @@ function tagTextBodyOf(block: Element): string | null {
  * must not self-identify through a nested block's label either (issue #13:
  * the shared markdown root was mistaken for a dsh-ui fence and hid the whole
  * message, losing every other code block). */
-function infostringOf(block: Element): 'dsh-ui' | 'svg' | null {
+function infostringOf(block: Element): 'iui' | 'dsh-ui' | 'svg' | 'iui-html' | null {
   const pre = block.querySelector('pre')
   for (const el of block.querySelectorAll('*')) {
     if (el.childElementCount !== 0) continue
     const lang = el.textContent?.trim()
-    if (lang !== 'dsh-ui' && lang !== 'svg') continue
+    if (lang !== 'iui' && lang !== 'dsh-ui' && lang !== 'svg' && lang !== 'iui-html') continue
     if (pre !== null && pre.contains(el)) continue
     // A leaf label that belongs to a NESTED known code surface is that
     // surface's banner, not `block`'s own banner. Only accept labels whose
@@ -214,7 +233,7 @@ function infostringOf(block: Element): 'dsh-ui' | 'svg' | null {
  */
 const KNOWN_LANGUAGE_LABELS = new Set([
   // 插件自有语言
-  'dsh-ui', 'svg',
+  'iui', 'dsh-ui', 'svg', 'iui-html',
   // 数据 / 标记 / 纯文本
   'json', 'json5', 'yaml', 'yml', 'toml', 'ini', 'xml', 'html', 'css', 'scss', 'sass', 'less',
   'markdown', 'md', 'text', 'txt', 'plain', 'plaintext', 'log', 'console', 'diff', 'patch',
@@ -291,8 +310,14 @@ function isGenericGenuiFence(block: Element, raw: string): boolean {
       return false
     }
   }
-  if (!validateCanonicalGenuiSpec(value).ok || diagnoseUnknownGenuiFields(value).length > 0) return false
-  return JSON.stringify(normalizeGenuiSpec(value).value) === JSON.stringify(value)
+  // Sandbox-first: host hides ```iui-html as localized「代码块」; accept css/html/js only.
+  // Catalog GenUI trees are removed — do not take over generic blocks as legacy cards.
+  if (looksLikeHtmlSandboxBody(typeof value === 'string' ? value : JSON.stringify(value))) return true
+  if (value !== null && typeof value === 'object') {
+    const rec = value as Record<string, unknown>
+    if (typeof rec.html === 'string' || typeof rec.css === 'string' || typeof rec.js === 'string') return true
+  }
+  return false
 }
 
 /** 读取宿主代码块或纯文本标签中的围栏正文。 */
@@ -334,7 +359,7 @@ function surfaceOf(pre: HTMLElement, scope: ParentNode = document): HTMLElement 
 function implausibleLabeledAncestorOf(pre: HTMLElement, scope: ParentNode = document): HTMLElement | null {
   let el: HTMLElement | null = pre.parentElement
   for (let hops = 0; el !== null && el !== scope && hops < SURFACE_HOPS; hops += 1, el = el.parentElement) {
-    if (infostringOf(el) === 'dsh-ui' && !isPlausibleFenceSurface(el)) return el
+    if (isUiFenceLang(infostringOf(el)) && !isPlausibleFenceSurface(el)) return el
   }
   return null
 }
@@ -360,7 +385,7 @@ function findFenceCandidates(scope: ParentNode = document): HTMLElement[] {
     // Message-level containers that happen to carry a surface class must
     // not be taken over: hiding them hides the whole answer (issue #19).
     if (!isPlausibleFenceSurface(el)) {
-      if (infostringOf(el) === 'dsh-ui') warnImplausibleSurface(el)
+      if (isUiFenceLang(infostringOf(el))) warnImplausibleSurface(el)
       continue
     }
     out.push(el)
@@ -388,7 +413,7 @@ function findFenceCandidates(scope: ParentNode = document): HTMLElement[] {
     // renderer install so future drift is never silent again.
     if (!driftWarned) {
       driftWarned = true
-      console.warn('[dsh-genui] 围栏表面类名未被已知选择器命中（宿主 DOM 漂移），已按 label+pre 结构识别 dsh-ui 围栏')
+      console.warn('[iui] 围栏表面类名未被已知选择器命中（宿主 DOM 漂移），已按 label+pre 结构识别 dsh-ui 围栏')
     }
     out.push(surface)
     seen.add(surface)
@@ -412,7 +437,7 @@ function warnImplausibleSurface(surface: Element): void {
   const pres = surface.querySelectorAll('pre')
   const tags = [...surface.querySelectorAll(BLOCK_CONTENT_SELECTOR)]
     .filter(el => !el.closest('pre')).map(el => el.tagName.toLowerCase())
-  console.warn(`[dsh-genui] 跳过带 dsh-ui 标签但疑似消息容器的节点：pre=${pres.length}, outside-code=${[...new Set(tags)].join(',') || 'none'}；保留原文，防止隐藏整条消息（issue #19）`)
+  console.warn(`[iui] 跳过带 dsh-ui 标签但疑似消息容器的节点：pre=${pres.length}, outside-code=${[...new Set(tags)].join(',') || 'none'}；保留原文，防止隐藏整条消息（issue #19）`)
 }
 
 /** Root factory seam (tests / tuning): the DOM channel creates one React root
@@ -454,8 +479,18 @@ function fenceIndexOf(ctx: Context, row: Element, block: Element, sourceLanguage
     let fallbackIndex = 0
     for (const candidate of findFenceCandidates(scope)) {
       if (candidate.closest(STREAMING) !== null) continue
-      const language = tagTextBodyOf(candidate) !== null ? 'dsh-ui' : domLanguageOf(candidate) ?? sourceLanguage(candidate)
-      if (language !== 'dsh-ui' && !(language === undefined && isGenericGenuiFence(candidate, rawOf(candidate)))) continue
+      const language = tagTextBodyOf(candidate) !== null ? 'iui' : domLanguageOf(candidate) ?? sourceLanguage(candidate)
+      {
+        const candRaw = rawOf(candidate)
+        // P1-N1: count explicit iui-html + sandbox-shaped bodies (avoid key collisions).
+        if (
+          !isUiFenceLang(language)
+          && !isHtmlFenceLang(language)
+          && !(language === undefined && isGenericGenuiFence(candidate, candRaw))
+          && !isJsonAsIui(language, candRaw)
+          && !looksLikeHtmlSandboxBody(candRaw)
+        ) continue
+      }
       fallbackIndex += 1
       if (candidate === block) return fallbackIndex
     }
@@ -466,8 +501,18 @@ function fenceIndexOf(ctx: Context, row: Element, block: Element, sourceLanguage
     if (candidate.closest(STREAMING) !== null) continue
     if (candidate.closest(ASSISTANT_FLOW_ROW) !== row) continue
     if (candidate.closest('[data-chat-group-part="reasoning"]') !== null) continue
-    const language = tagTextBodyOf(candidate) !== null ? 'dsh-ui' : domLanguageOf(candidate) ?? sourceLanguage(candidate)
-    if (language !== 'dsh-ui' && !(language === undefined && isGenericGenuiFence(candidate, rawOf(candidate)))) continue
+    const language = tagTextBodyOf(candidate) !== null ? 'iui' : domLanguageOf(candidate) ?? sourceLanguage(candidate)
+    {
+      const candRaw = rawOf(candidate)
+      // P1-N1: count explicit iui-html + sandbox-shaped bodies (avoid key collisions).
+      if (
+        !isUiFenceLang(language)
+        && !isHtmlFenceLang(language)
+        && !(language === undefined && isGenericGenuiFence(candidate, candRaw))
+        && !isJsonAsIui(language, candRaw)
+        && !looksLikeHtmlSandboxBody(candRaw)
+      ) continue
+    }
     index += 1
     if (candidate === block) return index
   }
@@ -703,6 +748,7 @@ export function installDomFenceRenderer(
     const context: GenuiFenceContext = {
       ...(sessionId === undefined ? {} : { sessionId }),
       ...(settled ? { source: { id: key as string, order: [anchorSeqOf(row), 0, fenceIndex] as const } } : {}),
+      streaming: !settled,
     }
     return { key, context }
   }
@@ -794,7 +840,7 @@ export function installDomFenceRenderer(
   function warnOnce(block: Element, message: string): void {
     if (warned.has(block)) return
     warned.add(block)
-    console.warn(`[dsh-genui] ${message}`)
+    console.warn(`[iui] ${message}`)
   }
 
   /**
@@ -817,22 +863,45 @@ export function installDomFenceRenderer(
     if (block.hasAttribute(PROCESSED)) return
     const row = rowOf(block)
     const settled = isSettled(block)
-    const domLanguage = tagTextBodyOf(block) !== null ? 'dsh-ui' : domLanguageOf(block)
+    const domLanguage = tagTextBodyOf(block) !== null ? 'iui' : domLanguageOf(block)
     const sourceLanguage = domLanguage === null ? sourceLanguages.get(block) : undefined
     const language = domLanguage ?? sourceLanguage
     const raw = rawOf(block)
     // DSH 0.1.7-alpha.2 会在最终 DOM 隐去不支持高亮的语言；公开 ChatSnapshot 的原始 Markdown 是 language 来源。
     // 内容识别只在 source 暂不可用且 assistant 已结束时兜底，不覆盖已确认的 language 或无 language fence。
-    const genericGenui = language === undefined && settled && isGenericGenuiFence(block, raw)
-    if (language !== 'dsh-ui' && language !== 'svg' && !genericGenui) return
-    if (!settled && language !== 'dsh-ui') return
+    // Sandbox-first: detect css/html/js BEFORE the accept gate — host often strips `iui-html`
+    // to a localized「代码块」banner, and legacy genericGenui still validated catalog GenUI only.
+    const jsonAsIui = isJsonAsIui(language, raw)
+    // Only rescue sandbox-shaped bodies when the host hid the lang (null/undefined),
+    // or the fence is already an IUI/json language — never hijack python/ts/etc.
+    const sandboxRescueLang = (
+      language === undefined
+      || language === null
+      || isHtmlFenceLang(language)
+      || isUiFenceLang(language)
+      || jsonAsIui
+      || (typeof language === 'string' && ['json', 'json5', 'jsonc'].includes(language.toLowerCase()))
+    )
+    const sandboxShaped = language !== 'svg' && sandboxRescueLang && looksLikeHtmlSandboxBody(raw)
+    const genericGenui = (language === undefined || language === null) && settled && isGenericGenuiFence(block, raw)
+    if (!isUiFenceLang(language) && language !== 'svg' && !isHtmlFenceLang(language) && !genericGenui && !jsonAsIui && !sandboxShaped) return
+    // Streaming: allow ```iui/dsh-ui/iui-html OR sandbox/GenUI-shaped ```json (weak model without prime).
+    if (!settled && !isUiFenceLang(language) && !isHtmlFenceLang(language) && !jsonAsIui && !sandboxShaped) return
     if (raw.trim() === '') {
-      if (settled) warnOnce(block, `settled ${language ?? 'dsh-ui'} fence has an empty body; keeping the code block`)
+      if (settled) warnOnce(block, `settled ${language ?? 'iui'} fence has an empty body; keeping the code block`)
       return
     }
     const { key, context } = contextOf(row, block, settled)
-    const acceptedLanguage = language === 'svg' ? 'svg' : 'dsh-ui'
-    const node: ReactNode | null = acceptedLanguage === 'svg' ? renderSvgFence(raw, key) : renderResolvedFenceNode(raw, key, context)
+    const acceptedLanguage: 'iui' | 'dsh-ui' | 'svg' | 'iui-html' = language === 'svg'
+      ? 'svg'
+      : language === 'iui-html' || sandboxShaped
+        ? 'iui-html'
+        : (language === 'dsh-ui' ? 'dsh-ui' : 'iui')
+    const node: ReactNode | null = acceptedLanguage === 'svg'
+      ? renderSvgFence(raw, key)
+      : acceptedLanguage === 'iui-html'
+        ? renderHtmlFence(raw, key, context)
+        : renderResolvedFenceNode(raw, key, context)
     // Null = no finished component yet (streaming half) or unrepairable: the
     // stock code block stays visible. A settled unrepairable body also gets a
     // VISIBLE diagnostic — console-only reporting left the defect invisible
@@ -950,16 +1019,16 @@ export function installDomFenceRenderer(
       }
       const raw = rawOf(block)
       const settled = isSettled(block)
-      const domLanguage = tagTextBodyOf(block) !== null ? 'dsh-ui' : domLanguageOf(block)
+      const domLanguage = tagTextBodyOf(block) !== null ? 'iui' : domLanguageOf(block)
       const sourceLanguage = domLanguage === null ? sourceLanguages.get(block) : undefined
       const language = domLanguage ?? sourceLanguage
-      const validGenui = language === 'dsh-ui'
+      const validGenui = isUiFenceLang(language)
         || (language === undefined && settled && isGenericGenuiFence(block, raw))
       if (mount.language === 'svg' && language !== 'svg') {
         unmountBlock(block)
         continue
       }
-      if (mount.language === 'dsh-ui' && !validGenui) {
+      if (isUiFenceLang(mount.language) && !validGenui) {
         unmountBlock(block)
         continue
       }
@@ -971,7 +1040,11 @@ export function installDomFenceRenderer(
       if (mount.lastRaw !== raw || mount.lastSettled !== settled || contentWiped) {
         const anchor = rowOf(block)
         const { key, context } = contextOf(anchor, block, settled)
-        const node = mount.language === 'svg' ? renderSvgFence(raw, key) : renderResolvedFenceNode(raw, key, context)
+        const node = mount.language === 'svg'
+          ? renderSvgFence(raw, key)
+          : mount.language === 'iui-html'
+            ? renderHtmlFence(raw, key, context)
+            : renderResolvedFenceNode(raw, key, context)
         if (node === null) {
           if (mount.skeleton && !settled) {
             // Still streaming and still incomplete: keep the skeleton mounted
@@ -1045,7 +1118,7 @@ export function installDomFenceRenderer(
       // label is no longer dsh-ui is somebody else's fence, so our explanation
       // would be about the wrong block.
       if (isSettled(block)) {
-        const domLanguage = tagTextBodyOf(block) !== null ? 'dsh-ui' : domLanguageOf(block)
+        const domLanguage = tagTextBodyOf(block) !== null ? 'iui' : domLanguageOf(block)
         const sourceLanguage = domLanguage === null ? sourceLanguages.get(block) : undefined
         if ((domLanguage ?? sourceLanguage) !== 'dsh-ui') {
           clearDiagnostic(block)

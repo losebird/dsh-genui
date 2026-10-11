@@ -7,15 +7,27 @@
  * components live in src/client/blocks/*.
  */
 import { renderInline } from './inline.ts'
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { useGenuiAction } from './action-context.ts'
 import css from './GenuiBlock.module.css'
+import { ThemeRoot } from './theme/ThemeRoot.tsx'
 import { loadBlockState, saveBlockState } from './interaction-store.ts'
 import { recordFence, recordInteraction } from './achievement-store.ts'
-import { renderNode } from './blocks/render-node.tsx'
+import { ProgressiveNodeList } from './progressive-mount.tsx'
 import type { AnswersState, GenuiBlockProps } from './blocks/state.ts'
 import type { GenuiSpec } from './spec.ts'
+import {
+  applyValueFromFields,
+  getBindingsSnapshot,
+  resolveSpecBindings,
+  setBindingsNeedTightPoll,
+  subscribeBindings,
+} from './binding-store.ts'
+import { hasUnresolvedBind } from '../shared/binding-parse.ts'
 import { compileSubmissionRegistry } from './submission-registry.ts'
+
+
+
 
 export const GENUI_ACTION_DEBOUNCE_MS = 300
 
@@ -83,9 +95,11 @@ function specEquivalent(a: GenuiSpec, b: GenuiSpec): boolean {
 
 /** Stateful implementation. Streaming state adopts its first durable key
  * when the reply settles; switching an existing durable key starts fresh. */
-function GenuiBlockInstance({ spec, stateKey, animateEntrance = true, initialState, onStateChange, onStateSnapshot }: GenuiBlockProps) {
+function GenuiBlockInstance({ spec, stateKey, animateEntrance = true, streaming = false, instanceId: _instanceId, sessionId: _sessionId, initialState, onStateChange, onStateSnapshot }: GenuiBlockProps) {
+  void _instanceId; void _sessionId
   const gap = spec.gap ?? 16
   const onAction = useDebouncedAction(useGenuiAction())
+  const toolBindings = useSyncExternalStore(subscribeBindings, getBindingsSnapshot, getBindingsSnapshot)
   const stateChangeRef = useRef(onStateChange)
   stateChangeRef.current = onStateChange
   const savesExternally = onStateChange !== undefined
@@ -148,6 +162,16 @@ function GenuiBlockInstance({ spec, stateKey, animateEntrance = true, initialSta
     }),
     [answers, multiAnswers, fields, secretFields, submissionRegistry, locked, round, setAnswer, setMultiAnswer, setField, registerSecretField, clear],
   )
+  // Tool-result `$bind:id` + local `valueFrom` (slider→progress) — zero model round-trip.
+  const boundSpec = useMemo(() => {
+    const merged = { ...toolBindings, ...(spec.bindings ?? {}) }
+    return applyValueFromFields(resolveSpecBindings(spec, merged), fields)
+  }, [spec, toolBindings, fields])
+  useEffect(() => {
+    const unresolved = hasUnresolvedBind(JSON.stringify(boundSpec))
+    setBindingsNeedTightPoll(unresolved)
+    return () => { setBindingsNeedTightPoll(false) }
+  }, [boundSpec])
   const durableState = useMemo(() => {
     const safeFields = Object.fromEntries(Object.entries(fields).filter(([id]) => !secretFields.has(id)))
     return {
@@ -185,32 +209,20 @@ function GenuiBlockInstance({ spec, stateKey, animateEntrance = true, initialSta
   useEffect(() => {
     recordFence(spec)
   }, [spec])
+  const gapPx = boundSpec.gap ?? gap
   return (
-    <div className={css.block} data-genui>
-      {spec.title !== undefined && <div className={css.banner}>{renderInline(spec.title)}</div>}
-      <div className={css.col} style={{ gap: `${gap}px` }}>
-        {spec.items.map((c, i) => (
-          // Staggered reveal: each root item fades/slides in after its
-          // predecessors, so the block assembles piece by piece instead of
-          // popping in as one slab. Delay capped so long specs still settle
-          // quickly; prefers-reduced-motion disables it (see CSS).
-          <div
-            key={i}
-            className={css.reveal}
-            style={{
-              animationDelay: `${Math.min(i * 90, 720)}ms`,
-              ...(!animateEntrance || persisted !== null ? { animation: 'none' } : {}),
-            }}
-            onAnimationEnd={event => {
-              // Reattaching this DOM node must not replay its completed entrance.
-              if (event.target === event.currentTarget) event.currentTarget.style.animation = 'none'
-            }}
-          >
-            {renderNode(c, i, trackedAction, 0, answersState)}
-          </div>
-        ))}
-      </div>
-    </div>
+    <ThemeRoot className={css.block} dataAttr="genui">
+      {boundSpec.title !== undefined && <div className={css.banner}>{renderInline(boundSpec.title)}</div>}
+      <ProgressiveNodeList
+        items={boundSpec.items}
+        gapPx={gapPx}
+        streaming={streaming}
+        animateEntrance={animateEntrance}
+        isReplay={persisted !== null}
+        answersState={answersState}
+        onAction={trackedAction}
+      />
+    </ThemeRoot>
   )
 }
 
@@ -230,6 +242,10 @@ export const GenuiBlock = memo(function GenuiBlock(props: GenuiBlockProps) {
   }
   return <GenuiBlockInstance key={identity.generation} {...props} />
 }, (prev, next) => prev.stateKey === next.stateKey
-  && prev.animateEntrance === next.animateEntrance && prev.onStateChange === next.onStateChange
+  && prev.animateEntrance === next.animateEntrance
+  && prev.streaming === next.streaming
+  && prev.instanceId === next.instanceId
+  && prev.sessionId === next.sessionId
+  && prev.onStateChange === next.onStateChange
   && prev.onStateSnapshot === next.onStateSnapshot
   && specEquivalent(prev.spec, next.spec))

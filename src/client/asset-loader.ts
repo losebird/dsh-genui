@@ -5,7 +5,7 @@
  * `window.__GenuiAssets__`.
  *
  * The bundles are served by the plugin's OWN node-half HTTP route
- * (`/plugins/@changfenhuang/dsh-genui/assets/*`), registered through the host
+ * (`/plugins/@losebird/iui/assets/*`), registered through the host
  * webserver service — no host source change needed, and the longest-prefix
  * rule lets this route win over the generic `/plugins` bundle route. Each
  * file is loaded at most once per page (promise memoized); a rejection is
@@ -19,7 +19,7 @@
  */
 
 /** The plugin's entry id — mirrors the loader entry name (package name). */
-const PLUGIN_ID = '@changfenhuang/dsh-genui'
+const PLUGIN_ID = '@losebird/iui'
 
 /** Assets directory served by the node-half route. */
 const ASSET_DIR = `/plugins/${PLUGIN_ID}/assets`
@@ -65,7 +65,16 @@ const pending = new Map<string, Promise<Record<string, unknown>>>()
  * @param name - 'mermaid', 'three', 'echarts-core', or 'echarts-full'.
  * @returns the registered engine surface.
  */
-export function loadGenuiAsset<T>(name: 'mermaid' | 'three' | 'echarts-core' | 'echarts-full'): Promise<T> {
+export type GenuiAssetName =
+  | 'mermaid'
+  | 'three'
+  | 'echarts-core'
+  | 'echarts-full'
+  | 'pack-mui'
+  | 'pack-antd'
+  | 'pack-chakra'
+
+export function loadGenuiAsset<T>(name: GenuiAssetName): Promise<T> {
   const preloaded = preloadedAsset(name)
   if (preloaded !== undefined) return Promise.resolve(preloaded as T)
   const file = `${name}.js`

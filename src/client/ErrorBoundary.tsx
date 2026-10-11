@@ -49,7 +49,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 
   override componentDidCatch(error: Error, info: ErrorInfo): void {
-    console.error('[dsh-genui] render failed:', error, info.componentStack ?? '')
+    console.error('[iui] render failed:', error, info.componentStack ?? '')
   }
 
   override render(): ReactNode {

@@ -24,16 +24,14 @@
  * apply) queues a [genui-action] user message back to the model.
  */
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import type { GenuiActionHandler } from './action-context.ts'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
-import { GenuiActionContext, type GenuiActionHandler } from './action-context.ts'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import { ExportableGenuiBlock } from './artifact/ExportableGenuiBlock.tsx'
-import { ErrorBoundary } from './ErrorBoundary.tsx'
-import { panelStateKey } from './interaction-store.ts'
 import { TemplateDrawer } from './TemplateDrawer.tsx'
 import { clearSessionPanel, getPanelExpandToken, getPanelSpec, setLocalPanel, subscribePanel, subscribePanelExpand } from './panel-store.ts'
 import { useT } from './i18n/index.ts'
 import css from './GenuiBlock.module.css'
+import { ThemeRoot } from './theme/ThemeRoot.tsx'
 
 /** Resize bounds for the panel body, in px. */
 const PANEL_HEIGHT_MIN = 120
@@ -63,7 +61,7 @@ export type GenuiPanelProps = PropsRuntime<'conversation.input.dock'> & GenuiPan
  * default so the dock never steals the message flow's scroll room; the
  * header always shows the current panel title.
  */
-export function GenuiPanel({ sessionId, sendGenuiAction, insertTemplate }: GenuiPanelProps) {
+export function GenuiPanel({ sessionId, sendGenuiAction: _sendGenuiAction, insertTemplate }: GenuiPanelProps) {
   const t = useT()
   const spec = useSyncExternalStore(subscribePanel, () => getPanelSpec(sessionId))
   const expandToken = useSyncExternalStore(subscribePanelExpand, () => getPanelExpandToken(sessionId))
@@ -184,7 +182,7 @@ export function GenuiPanel({ sessionId, sendGenuiAction, insertTemplate }: Genui
   }
 
   return (
-    <div className={css.panel} data-genui-panel>
+    <ThemeRoot className={css.panel} dataAttr="genui-panel">
       {/* Resize grip on the panel's TOP EDGE (above the header): the drag
           target the user described — the outermost top border, not a strip
           under the title. */}
@@ -270,18 +268,15 @@ export function GenuiPanel({ sessionId, sendGenuiAction, insertTemplate }: Genui
               }}
             />
           ) : spec !== null ? (
-            <GenuiActionContext.Provider value={sendGenuiAction}>
-              <ErrorBoundary label={t('panel.boundary')}>
-                {/* content-fingerprinted: same panel spec re-published restores its state */}
-                <ExportableGenuiBlock spec={spec} stateKey={panelStateKey(sessionId, JSON.stringify(spec))} />
-              </ErrorBoundary>
-            </GenuiActionContext.Provider>
+            <div data-iui-legacy-catalog="1" style={{ padding: 12, fontSize: 13, lineHeight: 1.5, color: 'var(--dsw-alias-label-secondary, #374151)' }}>
+              <strong>目录面板已移除。</strong>请改用 <code>{'```iui-html'}</code> 自由页（HTML/CSS/JS 沙箱）。
+            </div>
           ) : null}
         </div>
       )}
       {flash !== null && (
         <div className={css.panelFlash} role="status">{flash}</div>
       )}
-    </div>
+    </ThemeRoot>
   )
 }
